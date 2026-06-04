@@ -4497,6 +4497,7 @@ async function imwebFetchOrders() {
 
     // 4. 주문 목록 전체 페이지 수집
     var allOrders = [], page = 1, limit = 100;
+    var batchSize = 50; // prod-orders 배치 크기 (API 호출 최소화)
     var imwebFetch = async function(url) {
       var r = await fetch(url, {headers: {'access-token': token}});
       var d = await r.json();
@@ -4524,7 +4525,7 @@ async function imwebFetchOrders() {
       var listData = await imwebFetch(
         apiBase + '/shop/orders?limit=' + limit + '&page=' + page +
         '&order_time_from=' + fromTs + '&order_time_to=' + toTs +
-        '&prod_order_status=STANDBY'  // 배송대기 상태만
+        '&pay_status=complete'  // 결제완료만 (배송대기는 prod-orders에서 필터)
       );
       if (listData.code !== 200) throw new Error('주문 목록 오류: ' + listData.msg);
       var list = listData.data.list || [];
@@ -4546,8 +4547,8 @@ async function imwebFetchOrders() {
     });
     var allNos = allOrders.map(function(o) { return o.order_no; });
 
-    // 5. 주문상품 배치 조회 (20건씩)
-    var allItems = [], batchSize = 20;
+    // 5. 주문상품 배치 조회 (50건씩)
+    var allItems = [];
     for (var i = 0; i < allNos.length; i += batchSize) {
       var batch = allNos.slice(i, i + batchSize);
       stEl.textContent = '상품 조회 중... (' + Math.min(i + batchSize, allNos.length) + '/' + allNos.length + '건)';
