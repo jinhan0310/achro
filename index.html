@@ -1852,10 +1852,9 @@ function openKpiModal(type) {
     var prevPay = pays.filter(function(p) { return p.date < today; }).reduce(function(s, p) { return s + p.amount; }, 0);
     var todayPay = pays.filter(function(p) { return p.date === today; }).reduce(function(s, p) { return s + p.amount; }, 0);
     var 전잔 = vd.prevIn - md.prevMinus - prevPay;
-    var todayInV = isVat ? Math.round(vd.todayIn * 1.1) : vd.todayIn;
-    var 최종잔 = 전잔 + todayInV - md.todayMinus - todayPay;
+    var 최종잔 = 전잔 + vd.todayIn - md.todayMinus - todayPay;
 
-    var val = type === 'prev' ? 전잔 : type === 'today' ? vd.todayIn : 최종잔;
+    var val = type === 'prev' ? 전잔 : type === 'today' ? vd.todayIn - md.todayMinus : 최종잔;
     return { vendor: v, val: val };
   }).filter(function(r) { return r.val !== 0; })
     .sort(function(a, b) { return b.val - a.val; });
