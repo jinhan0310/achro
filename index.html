@@ -4452,7 +4452,11 @@ async function imwebResolveBase() {
 
 async function imwebGetToken(base) {
   var cached = null;
-  try { cached = localStorage.getItem('imweb_token'); } catch(e) {}
+  try {
+    cached = localStorage.getItem('imweb_token');
+    // 구버전 JSON 형식({token,exp}) 잔존 시 무효화
+    if (cached && cached.startsWith('{')) { cached = null; localStorage.removeItem('imweb_token'); }
+  } catch(e) {}
   if (cached) return cached;
   // 프록시 경유로 토큰 발급
   var res = await fetch(base + '/auth', {
