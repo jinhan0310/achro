@@ -4434,6 +4434,24 @@ var IMWEB_KEY    = '5399e90b11516c359e0e1248580ad5fb115487c39f';
 var IMWEB_SECRET = '2bfa1a0302863c329f8201';
 var IMWEB_BASE   = 'https://api.imweb.me/v2';
 
+async function imwebGetToken() {
+  var cached = null;
+  try { cached = JSON.parse(localStorage.getItem('imweb_token') || 'null'); } catch(e) {}
+  if (cached && cached.exp > Date.now()) return cached.token;
+
+  // /auth 엔드포인트는 CORS 헤더 없음 → corsproxy.io 경유
+  var proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(IMWEB_BASE + '/auth');
+  var res = await fetch(proxyUrl, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({key: IMWEB_KEY, secret: IMWEB_SECRET})
+  });
+  var data = await res.json();
+  if (data.code !== 200) throw new Error('인증 실패: ' + data.msg);
+  localStorage.setItem('imweb_token', JSON.stringify({token: data.access_token, exp: Date.now() + 50*60*1000}));
+  return data.access_token;
+}
+
 async function imwebFetchOrders() {
   var btn    = document.getElementById('imweb-btn');
   var stEl   = document.getElementById('oc-stA');
@@ -4441,16 +4459,9 @@ async function imwebFetchOrders() {
   btn.disabled = true;
   btn.textContent = '불러오는 중...';
   try {
-    // 1. 토큰 발급
+    // 1. 토큰 발급 (캐시 또는 신규)
     stEl.textContent = '아임웹 인증 중...';
-    var authRes = await fetch(IMWEB_BASE + '/auth', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({key: IMWEB_KEY, secret: IMWEB_SECRET})
-    });
-    var authData = await authRes.json();
-    if (authData.code !== 200) throw new Error('인증 실패: ' + authData.msg);
-    var token = authData.access_token;
+    var token = await imwebGetToken();
 
     // 2. 선택 날짜 or 오늘 기준 타임스탬프
     var dateVal = dateEl.value; // 'YYYY-MM-DD'
