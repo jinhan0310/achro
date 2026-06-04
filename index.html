@@ -5015,6 +5015,7 @@ function ocRender() {
     var qb = groups[b].reduce(function(s,e){return s+e[1].total;},0);
     return qb - qa;
   });
+  window._ocGroups = groups; // 카톡 복사용
 
   var html = '';
   var itemIdx = 0;
@@ -5107,6 +5108,7 @@ function ocRender() {
         + '<span style="font-size:14px;font-weight:900;color:'+supRkColor+';width:24px;text-align:center">'+(gi+1)+'</span>'
         + '<span style="font-size:14px;font-weight:700;color:var(--green)">'+sup+'</span>'
         + '<span style="font-size:12px;color:var(--text2);margin-left:auto">'+items.length+'개 품목 · 총 <b style="color:var(--text)">'+supTotal+'</b>개</span>'
+        + '<button id="kakao-btn-'+gi+'" onclick="event.stopPropagation();ocCopyKakao('+JSON.stringify(sup)+','+gi+')" style="font-size:11px;padding:4px 10px;border:1px solid #FEE500;border-radius:5px;background:#FEE500;color:#3C1E1E;font-weight:700;cursor:pointer;flex-shrink:0;">📋 카톡</button>'
       + '</div>';
 
     // 하위 상품들 (첫 번째는 거래처명 표시, 나머지는 생략)
@@ -5144,6 +5146,64 @@ function ocRender() {
   window._ocEntryKeys = window._ocEntryKeys;
 }
 
+
+function ocCopyKakao(sup, gi) {
+  var grp = (window._ocGroups || {})[sup];
+  if (!grp) return;
+
+  var lines = [sup];
+  grp.forEach(function(e) {
+    var p = e[1];
+    var vname = p.거래처상품명 || p.상품명;
+    // 컬러 정렬: 수량 많은 순
+    var colorEntries = Object.keys(p.colors).map(function(c) {
+      var total = Object.values(p.colors[c]).reduce(function(s,v){return s+v;},0);
+      return [c, p.colors[c], total];
+    }).sort(function(a,b){ return b[2]-a[2]; });
+
+    colorEntries.forEach(function(ce) {
+      var color = ce[0], sizes = ce[1];
+      // 사이즈 정렬: 수량 많은 순
+      var sizeEntries = Object.keys(sizes).map(function(s){ return [s, sizes[s]]; })
+        .sort(function(a,b){ return b[1]-a[1]; });
+      sizeEntries.forEach(function(se) {
+        lines.push(vname + ' ' + color + ' ' + se[0] + ' ' + se[1]);
+      });
+    });
+  });
+
+  var text = lines.join('\n');
+  var btn = document.getElementById('kakao-btn-'+gi);
+
+  var doFeedback = function(ok) {
+    if (!btn) return;
+    var orig = btn.textContent;
+    btn.textContent = ok ? '✓ 복사됨!' : '✗ 실패';
+    btn.style.background = ok ? 'var(--green)' : 'var(--red)';
+    btn.style.color = '#fff';
+    btn.style.borderColor = ok ? 'var(--green)' : 'var(--red)';
+    setTimeout(function() {
+      btn.textContent = orig;
+      btn.style.background = '#FEE500';
+      btn.style.color = '#3C1E1E';
+      btn.style.borderColor = '#FEE500';
+    }, 2000);
+  };
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function(){ doFeedback(true); }).catch(function(){
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+      document.body.removeChild(ta); doFeedback(true);
+    });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta); doFeedback(true);
+  }
+}
 
 function ocTog(i) {
   var key = window._ocEntryKeys ? window._ocEntryKeys[i] : '';
