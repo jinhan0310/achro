@@ -4507,7 +4507,15 @@ async function imwebFetchOrders() {
         d = await r.json();
       }
       if (d.msg && d.msg.toUpperCase().includes('TOO MANY')) {
-        throw new Error('아임웹 API 요청 한도 초과입니다.\n잠시 후(1~2분) 다시 시도해주세요.');
+        // 60초 대기 후 자동 재시도
+        for (var sec = 60; sec > 0; sec--) {
+          stEl.textContent = '요청 한도 초과 — ' + sec + '초 후 자동 재시도...';
+          await new Promise(function(res){ setTimeout(res, 1000); });
+        }
+        r = await fetch(url, {headers: {'access-token': token}});
+        d = await r.json();
+        if (d.msg && d.msg.toUpperCase().includes('TOO MANY'))
+          throw new Error('요청 한도가 아직 초과 상태입니다. 잠시 후 다시 눌러주세요.');
       }
       return d;
     };
