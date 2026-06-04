@@ -3459,9 +3459,8 @@ function renderVendorHistTable() {
         <div style="font-size:12px;color:var(--text2);margin-bottom:12px">imweb 주문 엑셀 파일<br>(.xlsx / .xls)</div>
         <button class="btn btn-outline" style="font-size:12px" onclick="event.stopPropagation();document.getElementById('oc-fileA').click()">파일 선택</button>
         <div style="margin:12px 0;display:flex;align-items:center;gap:8px;"><hr style="flex:1;border:none;border-top:1px solid var(--border);"><span style="font-size:11px;color:var(--text3);white-space:nowrap;">또는</span><hr style="flex:1;border:none;border-top:1px solid var(--border);"></div>
-        <div style="display:flex;align-items:center;gap:6px;justify-content:center;" onclick="event.stopPropagation()">
-          <input type="date" id="imweb-date" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-family:inherit;">
-          <button id="imweb-btn" class="btn btn-dark" style="font-size:12px;padding:6px 12px;white-space:nowrap;" onclick="event.stopPropagation();imwebFetchOrders()">아임웹 불러오기</button>
+        <div onclick="event.stopPropagation()">
+          <button id="imweb-btn" class="btn btn-dark" style="font-size:12px;padding:7px 16px;white-space:nowrap;" onclick="event.stopPropagation();imwebFetchOrders()">아임웹 불러오기 (배송대기)</button>
         </div>
         <div style="margin-top:10px;font-size:12px;color:var(--text2);min-height:18px" id="oc-stA">파일을 드래그하거나 버튼을 눌러주세요</div>
       </div>
@@ -4471,9 +4470,8 @@ async function imwebGetToken(base) {
 }
 
 async function imwebFetchOrders() {
-  var btn    = document.getElementById('imweb-btn');
-  var stEl   = document.getElementById('oc-stA');
-  var dateEl = document.getElementById('imweb-date');
+  var btn  = document.getElementById('imweb-btn');
+  var stEl = document.getElementById('oc-stA');
   btn.disabled = true;
   btn.textContent = '불러오는 중...';
   try {
@@ -4488,16 +4486,9 @@ async function imwebFetchOrders() {
     stEl.textContent = '아임웹 인증 중...';
     var token = await imwebGetToken(apiBase);
 
-    // 3. 선택 날짜 or 오늘 기준 타임스탬프
-    var dateVal = dateEl.value;
-    var base = dateVal ? new Date(dateVal + 'T00:00:00') : new Date();
-    var y = base.getFullYear(), mo = base.getMonth(), d = base.getDate();
-    var fromTs = Math.floor(new Date(y, mo, d, 0, 0, 0).getTime() / 1000);
-    var toTs   = Math.floor(new Date(y, mo, d, 23, 59, 59).getTime() / 1000);
-
-    // 4. 주문 목록 전체 페이지 수집
+    // 3. 현재 배송대기 주문 전체 수집
     var allOrders = [], page = 1, limit = 100;
-    var batchSize = 50; // prod-orders 배치 크기 (API 호출 최소화)
+    var batchSize = 50;
     var imwebFetch = async function(url) {
       var r = await fetch(url, {headers: {'access-token': token}});
       var d = await r.json();
@@ -4524,8 +4515,7 @@ async function imwebFetchOrders() {
       stEl.textContent = '주문 목록 조회 중... (' + allOrders.length + '건)';
       var listData = await imwebFetch(
         apiBase + '/shop/orders?limit=' + limit + '&page=' + page +
-        '&order_time_from=' + fromTs + '&order_time_to=' + toTs +
-        '&pay_status=complete'  // 결제완료만 (배송대기는 prod-orders에서 필터)
+        '&prod_order_status=STANDBY'
       );
       if (listData.code !== 200) throw new Error('주문 목록 오류: ' + listData.msg);
       var list = listData.data.list || [];
@@ -4606,10 +4596,10 @@ async function imwebFetchOrders() {
 
     // 5. ocOrders 설정 후 UI 갱신
     ocOrders = allItems;
-    ocOrderDate = dateVal || new Date().toLocaleDateString('ko-KR');
+    ocOrderDate = new Date().toLocaleDateString('ko-KR');
     document.getElementById('oc-dropA').style.borderColor = 'var(--green)';
-    ocSetStA('✓ 아임웹 ' + allItems.length + '건 (' + (dateVal || '오늘') + ')');
-    ocSetChip('oc-chipO', '주문 ' + allItems.length + '건', '#052e16', 'var(--green)');
+    ocSetStA('✓ 아임웹 배송대기 ' + allItems.length + '건');
+    ocSetChip('oc-chipO', '배송대기 ' + allItems.length + '건', '#052e16', 'var(--green)');
     ocCheckReady();
 
   } catch(e) {
@@ -4621,14 +4611,6 @@ async function imwebFetchOrders() {
   }
 }
 
-// 아임웹 날짜 기본값 = 오늘
-window.addEventListener('DOMContentLoaded', function() {
-  var el = document.getElementById('imweb-date');
-  if (el) {
-    var t = new Date();
-    el.value = t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0');
-  }
-});
 
 function ocParseOrder(wb, fname) {
   var ws = wb.Sheets[wb.SheetNames[0]];
