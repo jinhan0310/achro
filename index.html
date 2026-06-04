@@ -31,27 +31,32 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
 if(typeof XLSX!=="undefined"){window.XLSX=XLSX;}
 
 </script>
-<!-- Firebase -->
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <script>
-// Firebase stub - file:// 환경용
-var firebase = {
-  initializeApp: function(){},
-  auth: function(){ return {
-    onAuthStateChanged: function(cb){ cb({uid:'local',email:'local@local.com'}); },
-    signInWithEmailAndPassword: function(){ return Promise.resolve({user:{uid:'local',email:'local@local.com'}}); },
-    signOut: function(){ return Promise.resolve(); }
-  }; },
-  firestore: function(){ return {
-    collection: function(){ return {
-      doc: function(){ return {
-        get: function(){ return Promise.resolve({exists:false, data:function(){return {};}}); },
-        set: function(){ return Promise.resolve(); },
-        update: function(){ return Promise.resolve(); }
-      }; },
-      get: function(){ return Promise.resolve({docs:[]}); }
+// Firebase stub - SDK 미로드(file:// 등) 시 fallback
+if (typeof firebase === 'undefined') {
+  var firebase = {
+    initializeApp: function(){},
+    auth: function(){ return {
+      onAuthStateChanged: function(cb){ cb(null); },
+      signInWithEmailAndPassword: function(){ return Promise.reject(new Error('오프라인 환경')); },
+      signOut: function(){ return Promise.resolve(); }
+    }; },
+    firestore: function(){ return {
+      collection: function(){ return {
+        doc: function(){ return {
+          get: function(){ return Promise.resolve({exists:false, data:function(){return {};}}); },
+          set: function(){ return Promise.resolve(); },
+          update: function(){ return Promise.resolve(); }
+        }; },
+        get: function(){ return Promise.resolve({docs:[]}); }
+      }; }
     }; }
-  }; }
-};
+  };
+}
 </script>
 <script>
 const _FB_CFG = {
@@ -136,25 +141,63 @@ async function fbSaveSP() {
 async function fbLoadAll() {
   if (!_fbUser) return;
   try {
+    // 메인 문서 (pmData, spData)
     var doc = await _db.collection('achro').doc(_fbUser.uid).get();
     if (doc.exists) {
       var d = doc.data();
       if (d.pmData && d.pmData.length) {
-        pmData = d.pmData;
-        window.pmData = pmData;
-        window._masterProducts = pmData;
+        pmData = d.pmData; window.pmData = pmData; window._masterProducts = pmData;
         localStorage.setItem(PM_KEY, JSON.stringify(pmData));
         if (typeof pmUpdateStats === 'function') { pmUpdateStats(); pmRenderSeasonTabs(); pmRenderTable(); pmRefreshAll(); }
-        console.log('☁ pmData 로드:', pmData.length + '개');
       }
       if (d.spData && d.spData.length) {
-        spData = d.spData;
-        localStorage.setItem(SP_KEY, JSON.stringify(spData));
+        spData = d.spData; localStorage.setItem(SP_KEY, JSON.stringify(spData));
         if (typeof spRender === 'function') spRender();
-        console.log('☁ spData 로드:', spData.length + '개');
       }
     }
+    // 정산 데이터 문서
+    var dataDoc = await _db.collection('achro').doc(_fbUser.uid + '_data').get();
+    if (dataDoc.exists) {
+      var dd = dataDoc.data();
+      var _set = function(key, val, refresh) {
+        if (val !== undefined && val !== null) {
+          localStorage.setItem(key, JSON.stringify(val));
+          if (refresh) try { refresh(); } catch(e) {}
+        }
+      };
+      _set('achro_tx4',        dd.txData,    function(){ if(typeof renderVendorLedger==='function') renderVendorLedger(); if(typeof renderLedger==='function') renderLedger(); });
+      _set('achro_price4',     dd.priceData);
+      _set('achro_adj2',       dd.adjData);
+      _set('achro_minus_v1',   dd.minusData, function(){ if(typeof renderVendorLedger==='function') renderVendorLedger(); });
+      _set('achro_payment_v1', dd.payData,   function(){ if(typeof renderVendorLedger==='function') renderVendorLedger(); });
+      _set('achro_vat_vendors',dd.vatData);
+      _set('achro_products',   dd.products);
+      _set('achro_history',    dd.history);
+      _set('achro_vendors',    dd.vendors);
+      _set('achro_ib_history', dd.ibHistory);
+      console.log('☁ 정산 데이터 로드 완료');
+    }
   } catch(e) { console.error('FB load error', e); }
+}
+
+// ── 정산 데이터 저장 (debounce 500ms) ──
+var _fbSaveTimer = null;
+function fbSaveData(patch) {
+  if (!_fbUser) return;
+  clearTimeout(_fbSaveTimer);
+  _fbSaveTimer = setTimeout(async function() {
+    try { await _db.collection('achro').doc(_fbUser.uid + '_data').set(patch, {merge:true}); }
+    catch(e) { console.error('FB save error', e); }
+  }, 500);
+}
+function fbSaveTx(d)       { fbSaveData({txData: d}); }
+function fbSavePrices(d)   { fbSaveData({priceData: d}); }
+function fbSaveAdj(d)      { fbSaveData({adjData: d}); }
+function fbSaveMinus(d)    { fbSaveData({minusData: d}); }
+function fbSavePayments(d) { fbSaveData({payData: d}); }
+function fbSaveVat(d)      { fbSaveData({vatData: d}); }
+function fbSaveStock(products, history, vendors, ibHistory) {
+  fbSaveData({products: products, history: history, vendors: vendors, ibHistory: ibHistory});
 }
 </script>
 <style>
@@ -1033,12 +1076,13 @@ function loadTx()     { try { return JSON.parse(localStorage.getItem(SK)||'[]');
 function saveTx(d) {
   localStorage.setItem(SK, JSON.stringify(d));
   ['achro_tx3','achro_tx2','achro_tx_v2'].forEach(function(k){ localStorage.removeItem(k); });
+  fbSaveTx(d);
 }
 function loadPrices() { try { return JSON.parse(localStorage.getItem(PK)||'{}'); } catch(e){ return {}; } }
-function savePrices(c){ localStorage.setItem(PK, JSON.stringify(c)); }
+function savePrices(c){ localStorage.setItem(PK, JSON.stringify(c)); fbSavePrices(c); }
 
 function adjLoad()   { try { return JSON.parse(localStorage.getItem(ADJ_KEY)||'[]'); } catch(e){ return []; } }
-function adjSave(d)  { localStorage.setItem(ADJ_KEY, JSON.stringify(d)); }
+function adjSave(d)  { localStorage.setItem(ADJ_KEY, JSON.stringify(d)); fbSaveAdj(d); }
 
 function addTx(tx) {
   var d = loadTx(); d.push(tx); saveTx(d);
@@ -1743,9 +1787,9 @@ function _confirmCancel() {
 }
 
 function loadMinus() { try { return JSON.parse(localStorage.getItem(MINUS_KEY)||'[]'); } catch(e){ return []; } }
-function saveMinus(d) { localStorage.setItem(MINUS_KEY, JSON.stringify(d)); }
+function saveMinus(d) { localStorage.setItem(MINUS_KEY, JSON.stringify(d)); fbSaveMinus(d); }
 function loadVatVendors() { try { return JSON.parse(localStorage.getItem(VAT_KEY)||'[]'); } catch(e){ return []; } }
-function saveVatVendors(d) { localStorage.setItem(VAT_KEY, JSON.stringify(d)); }
+function saveVatVendors(d) { localStorage.setItem(VAT_KEY, JSON.stringify(d)); fbSaveVat(d); }
 function isVatVendor(v) { return loadVatVendors().indexOf(v) >= 0; }
 function toggleVatVendor(v) {
   var scrollY = window.scrollY || window.pageYOffset;
@@ -1759,7 +1803,7 @@ function toggleVatVendor(v) {
 }
 
 function loadPayments() { try { return JSON.parse(localStorage.getItem(PAY_KEY)||'[]'); } catch(e){ return []; } }
-function savePayments(d) { localStorage.setItem(PAY_KEY, JSON.stringify(d)); }
+function savePayments(d) { localStorage.setItem(PAY_KEY, JSON.stringify(d)); fbSavePayments(d); }
 
 // ── 정산관리 서브탭 ──
 var _ledgerSub = 'vendor';
@@ -3766,6 +3810,7 @@ function save() {
   localStorage.setItem('achro_history',    JSON.stringify(txHistory));
   localStorage.setItem('achro_vendors',    JSON.stringify(vendors));
   localStorage.setItem('achro_ib_history', JSON.stringify(ibHistory));
+  fbSaveStock(products, txHistory, vendors, ibHistory);
 }
 
 var today = () => new Date().toISOString().slice(0,10);
