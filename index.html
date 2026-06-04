@@ -883,6 +883,7 @@ select option { background: #fff; }
       <input type="text" id="stock-search" placeholder="코드 / 상품명 / 거래처" style="width:220px;" oninput="renderStock()">
       <select id="stock-season" onchange="renderStock()"><option value="">전체 시즌</option></select>
       <select id="stock-filter" onchange="renderStock()"><option value="">전체</option><option value="instock">재고있음</option><option value="zero">재고없음</option></select>
+      <button class="btn btn-outline btn-sm" onclick="dlStockExcel()" style="white-space:nowrap;">⬇ 엑셀 다운로드</button>
     </div>
   </div>
   <div class="table-wrap"><div class="table-scroll"><table>
@@ -928,6 +929,7 @@ select option { background: #fff; }
         <button class="btn btn-sm" style="background:#2e7d52;color:#fff;border:none;" onclick="openMinusModal('plus')">＋ 플러스 등록</button>
         <button class="btn btn-outline btn-sm" onclick="renderVendorLedger()">새로고침</button>
         <button class="btn btn-outline btn-sm" onclick="openMergeModal()">거래처 통합</button>
+        <button class="btn btn-outline btn-sm" onclick="dlSettleExcel()" style="white-space:nowrap;">⬇ 엑셀 다운로드</button>
       </div>
     </div>
     <div id="vendor-ledger-list"></div>
@@ -1760,6 +1762,7 @@ function renderStock() {
    +kpiCard('\ud310\ub9e4 \uc218\ub7c9',fmt(totSale)+'\uac1c','\ub204\uc801','kv-green')
    +kpiCard('\ud604\uc7ac \uc7ac\uace0',fmt(totIn+totAdj-totSale)+'\uac1c','\uc785\uace0+\ubcf4\uc720-\ud310\ub9e4','kv-orange');
 
+  window._stockRows = rows; // 다운로드용 캐시
   var body=document.getElementById('stock-body');
   var empty=document.getElementById('stock-empty');
   if(!rows.length){body.innerHTML='';empty.style.display='block';return;}
@@ -1795,6 +1798,72 @@ function renderStock() {
 }
 
 
+
+// ── 재고현황 엑셀 다운로드 ──
+function dlStockExcel() {
+  var rows = window._stockRows;
+  if (!rows || !rows.length) { alert('먼저 재고현황 탭을 열어주세요.'); return; }
+  var header = ['상품코드','거래처상품명','거래처','시즌','컬러','사이즈','입고','보유(조정)','판매','현재고','평균단가','재고금액'];
+  var data = rows.map(function(r) {
+    return [
+      r.p['상품코드'], r.p['거래처상품명'], r.p['거래처'], r.p['시즌'],
+      r.m.color||'-', r.m.size||'-',
+      r.m.inQ, r.m.adjQ, r.m.saleQ, r.stk,
+      r.avg>0 ? Math.round(r.avg) : 0,
+      r.stk>0&&r.avg>0 ? Math.round(r.stk*r.avg) : 0
+    ];
+  });
+  var ws = XLSX.utils.aoa_to_sheet([header].concat(data));
+  ws['!cols'] = [{wch:14},{wch:24},{wch:18},{wch:8},{wch:10},{wch:8},{wch:6},{wch:8},{wch:6},{wch:8},{wch:10},{wch:12}];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '재고현황');
+  XLSX.writeFile(wb, '재고현황_' + todayStr() + '.xlsx');
+}
+
+// ── 정산현황 엑셀 다운로드 ──
+function dlSettleExcel() {
+  var txs = loadTx(), minus = loadMinus(), payments = loadPayments(), vatVendors = loadVatVendors();
+  var today = todayStr();
+
+  var vMap = {}, mMap = {};
+  txs.forEach(function(t) {
+    if (t.type !== 'in' || !t.vendor) return;
+    if (!vMap[t.vendor]) vMap[t.vendor] = {};
+    vMap[t.vendor][t.date] = (vMap[t.vendor][t.date] || 0) + t.amount;
+  });
+  minus.forEach(function(m) {
+    if (!m.vendor) return;
+    if (!mMap[m.vendor]) mMap[m.vendor] = {};
+    mMap[m.vendor][m.date] = (mMap[m.vendor][m.date] || 0) + m.amount;
+  });
+  var allVendors = {};
+  Object.keys(vMap).forEach(function(v){ allVendors[v]=true; });
+  Object.keys(mMap).forEach(function(v){ allVendors[v]=true; });
+  payments.forEach(function(p){ if(p.vendor) allVendors[p.vendor]=true; });
+
+  var vendors = Object.keys(allVendors).sort(function(a,b){ return a.localeCompare(b,'ko'); });
+  var header = ['거래처','부가세','전잔','오늘 입고금액','오늘 반품/조정','오늘 입금','최종잔'];
+  var data = vendors.map(function(v) {
+    var vd = vMap[v] || {}, md = mMap[v] || {};
+    var isVat = vatVendors.indexOf(v) >= 0;
+    var pays = payments.filter(function(p){ return p.vendor===v; });
+    var prevIn=0, todayIn=0, prevMinus=0, todayMinus=0;
+    Object.keys(vd).forEach(function(dt){ if(dt<today) prevIn+=vd[dt]; else if(dt===today) todayIn+=vd[dt]; });
+    Object.keys(md).forEach(function(dt){ if(dt<today) prevMinus+=md[dt]; else if(dt===today) todayMinus+=md[dt]; });
+    var prevPay  = pays.filter(function(p){return p.date<today;}).reduce(function(s,p){return s+p.amount;},0);
+    var todayPay = pays.filter(function(p){return p.date===today;}).reduce(function(s,p){return s+p.amount;},0);
+    var 전잔 = prevIn - prevMinus - prevPay;
+    var todayInV = isVat ? Math.round(todayIn*1.1) : todayIn;
+    var 최종잔 = 전잔 + todayInV - todayMinus - todayPay;
+    return [v, isVat?'Y':'', 전잔, todayInV, todayMinus, todayPay, 최종잔];
+  }).filter(function(r){ return r[2]!==0||r[3]!==0||r[6]!==0; });
+
+  var ws = XLSX.utils.aoa_to_sheet([header].concat(data));
+  ws['!cols'] = [{wch:24},{wch:6},{wch:12},{wch:14},{wch:14},{wch:12},{wch:12}];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '정산현황');
+  XLSX.writeFile(wb, '정산현황_' + todayStr() + '.xlsx');
+}
 
 // ── 마이너스 항목 ──
 
