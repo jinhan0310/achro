@@ -4430,26 +4430,36 @@ function ocGetColor(s) { if(!s) return '미지정'; var m = s.match(/[Cc]olor\s*
 function ocGetSize(s)  { if(!s) return 'FREE';  var m = s.match(/[Ss]ize\s*:\s*([^\s\/\n]+)/i);  return m ? m[1].trim() : 'FREE'; }
 
 // ── 아임웹 API 주문 불러오기 ──
-var IMWEB_KEY    = '5399e90b11516c359e0e1248580ad5fb115487c39f';
-var IMWEB_SECRET = '2bfa1a0302863c329f8201';
-var IMWEB_BASE   = 'https://api.imweb.me/v2';
+var IMWEB_BASE = 'https://api.imweb.me/v2';
+// 아임웹 access_token (key+secret 조합에 대해 서버가 고정 발급)
+var IMWEB_TOKEN_FIXED = '782b74b28eda718c42e0f1eeee2bb220';
 
 async function imwebGetToken() {
+  // localStorage 캐시 우선 사용
   var cached = null;
-  try { cached = JSON.parse(localStorage.getItem('imweb_token') || 'null'); } catch(e) {}
-  if (cached && cached.exp > Date.now()) return cached.token;
+  try { cached = localStorage.getItem('imweb_token'); } catch(e) {}
+  if (cached) return cached;
+  return IMWEB_TOKEN_FIXED;
+}
 
-  // /auth 엔드포인트는 CORS 헤더 없음 → corsproxy.io 경유
-  var proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(IMWEB_BASE + '/auth');
-  var res = await fetch(proxyUrl, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({key: IMWEB_KEY, secret: IMWEB_SECRET})
-  });
-  var data = await res.json();
-  if (data.code !== 200) throw new Error('인증 실패: ' + data.msg);
-  localStorage.setItem('imweb_token', JSON.stringify({token: data.access_token, exp: Date.now() + 50*60*1000}));
-  return data.access_token;
+async function imwebRefreshToken() {
+  // 토큰 만료 시: form-encoded POST (simple request → preflight 없음)
+  // 응답 CORS 헤더 없어도 opaque response에서 token 추출 시도
+  try {
+    var res = await fetch(IMWEB_BASE + '/auth', {
+      method: 'POST',
+      body: new URLSearchParams({
+        key: '5399e90b11516c359e0e1248580ad5fb115487c39f',
+        secret: '2bfa1a0302863c329f8201'
+      })
+    });
+    var data = await res.json();
+    if (data.access_token) {
+      localStorage.setItem('imweb_token', data.access_token);
+      return data.access_token;
+    }
+  } catch(e) {}
+  return IMWEB_TOKEN_FIXED;
 }
 
 async function imwebFetchOrders() {
@@ -4480,6 +4490,17 @@ async function imwebFetchOrders() {
         {headers: {'access-token': token}}
       );
       var listData = await listRes.json();
+      // 토큰 만료 시 자동 갱신 1회 재시도
+      if (listData.code === -5) {
+        localStorage.removeItem('imweb_token');
+        token = await imwebRefreshToken();
+        listRes = await fetch(
+          IMWEB_BASE + '/shop/orders?limit=' + limit + '&page=' + page +
+          '&order_time_from=' + fromTs + '&order_time_to=' + toTs,
+          {headers: {'access-token': token}}
+        );
+        listData = await listRes.json();
+      }
       if (listData.code !== 200) throw new Error('주문 목록 오류: ' + listData.msg);
       var list = listData.data.list || [];
       list.forEach(function(o) { allOrders.push(o); });
