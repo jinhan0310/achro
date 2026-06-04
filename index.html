@@ -87,6 +87,8 @@ document.addEventListener('DOMContentLoaded', function() {
       if (ls) ls.style.display = 'none';
       if (ub) {
         ub.innerHTML =
+          '<span id="fb-sync-status" style="font-size:11px;color:var(--text3);"></span>' +
+          '<button onclick="fbUploadAll()" style="font-size:11px;padding:3px 10px;border:1px solid var(--border2);border-radius:5px;background:none;cursor:pointer;color:var(--text2);" title="현재 데이터를 클라우드에 강제 업로드">☁ 업로드</button>' +
           '<span style="font-size:12px;color:var(--text2);">🔐 ' + user.email + '</span>' +
           '<button onclick="fbLogout()" style="font-size:11px;padding:3px 10px;border:1px solid var(--border2);border-radius:5px;background:none;cursor:pointer;color:var(--text2);">로그아웃</button>';
         ub.style.display = 'flex';
@@ -157,6 +159,7 @@ async function fbLoadAll() {
     }
     // 정산 데이터 문서
     var dataDoc = await _db.collection('achro').doc(_fbUser.uid + '_data').get();
+    var st = document.getElementById('fb-sync-status');
     if (dataDoc.exists) {
       var dd = dataDoc.data();
       var _set = function(key, val, refresh) {
@@ -175,9 +178,53 @@ async function fbLoadAll() {
       _set('achro_history',    dd.history);
       _set('achro_vendors',    dd.vendors);
       _set('achro_ib_history', dd.ibHistory);
-      console.log('☁ 정산 데이터 로드 완료');
+      if (st) { st.textContent = '✓ 동기화 완료'; setTimeout(function(){ st.textContent=''; }, 3000); }
+    } else {
+      // Firebase에 데이터 없음 → 이 기기의 데이터가 있으면 자동 업로드
+      var hasTx = (JSON.parse(localStorage.getItem('achro_tx4')||'[]')).length > 0;
+      if (hasTx) {
+        if (st) st.textContent = '첫 업로드 중...';
+        await fbUploadAll();
+      } else {
+        if (st) { st.textContent = '클라우드 데이터 없음'; setTimeout(function(){ st.textContent=''; }, 4000); }
+      }
     }
   } catch(e) { console.error('FB load error', e); }
+}
+
+// ── 전체 데이터 Firebase 업로드 (현재 컴퓨터 → 클라우드) ──
+async function fbUploadAll() {
+  if (!_fbUser) return;
+  var st = document.getElementById('fb-sync-status');
+  if (st) st.textContent = '업로드 중...';
+  try {
+    var getLS = function(k, def) { try { return JSON.parse(localStorage.getItem(k) || JSON.stringify(def)); } catch(e) { return def; } };
+    await _db.collection('achro').doc(_fbUser.uid + '_data').set({
+      txData:    getLS('achro_tx4', []),
+      priceData: getLS('achro_price4', {}),
+      adjData:   getLS('achro_adj2', []),
+      minusData: getLS('achro_minus_v1', []),
+      payData:   getLS('achro_payment_v1', []),
+      vatData:   getLS('achro_vat_vendors', []),
+      products:  getLS('achro_products', []),
+      history:   getLS('achro_history', []),
+      vendors:   getLS('achro_vendors', []),
+      ibHistory: getLS('achro_ib_history', []),
+      uploadedAt: new Date().toISOString()
+    });
+    // pmData / spData
+    if (typeof pmData !== 'undefined' && pmData && pmData.length) {
+      await _db.collection('achro').doc(_fbUser.uid).set({ pmData: pmData }, { merge: true });
+    }
+    if (typeof spData !== 'undefined' && spData && spData.length) {
+      await _db.collection('achro').doc(_fbUser.uid).set({ spData: spData }, { merge: true });
+    }
+    if (st) { st.textContent = '✓ 업로드 완료'; setTimeout(function(){ st.textContent=''; }, 3000); }
+    alert('클라우드 업로드 완료!\n다른 기기에서 로그인하면 동기화된 데이터를 볼 수 있습니다.');
+  } catch(e) {
+    if (st) st.textContent = '업로드 실패';
+    alert('업로드 실패: ' + e.message);
+  }
 }
 
 // ── 정산 데이터 저장 (debounce 500ms) ──
