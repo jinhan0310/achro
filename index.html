@@ -1930,8 +1930,9 @@ function renderVendorLedger(searchQ) {
     });
     var pays=(typeof loadPayments==='function'?loadPayments():[]);
     var totPay=pays.reduce(function(s,p){return s+p.amount;},0);
+    var prevPay=pays.filter(function(p){return p.date<_d;}).reduce(function(s,p){return s+p.amount;},0);
     var el;
-    el=document.getElementById('l-prev');   if(el) el.textContent='₩'+fmt(pIn-pMinus);
+    el=document.getElementById('l-prev');   if(el) el.textContent='₩'+fmt(pIn-pMinus-prevPay);
     el=document.getElementById('l-prev-sub');if(el) el.textContent='입고₩'+fmt(pIn)+(pMinus?'−반품₩'+fmt(pMinus):'');
     el=document.getElementById('l-today');  if(el) el.textContent='₩'+fmt(tIn-tMinus);
     el=document.getElementById('l-today-cnt');if(el) el.textContent=tInC+'건'+(tMinus?' (−₩'+fmt(tMinus)+')':'');
@@ -2505,12 +2506,15 @@ function renderLedger() {
     if(t.type==='in')   { aIn+=t.amount; if(t.date===d){tIn+=t.amount;tInC++;}else pIn+=t.amount; }
     if(t.type==='sale') { aSale+=t.amount; if(t.date===d){tSale+=t.amount;tSaleC++;} }
   });
+  var payments=(typeof loadPayments==='function'?loadPayments():[]);
+  var totPay=payments.reduce(function(s,p){return s+p.amount;},0);
+  var prevPay=payments.filter(function(p){return p.date<d;}).reduce(function(s,p){return s+p.amount;},0);
   // 정산은 입고 기준 — 판매/반품은 재고용이므로 정산 금액에서 제외
   document.getElementById('l-today').textContent    = '₩'+fmt(tIn-tMinus);
   document.getElementById('l-today-cnt').textContent= tInC+'건'+(tMinus?' (−₩'+fmt(tMinus)+')':'');
-  document.getElementById('l-prev').textContent     = '₩'+fmt(pIn-pMinus);
+  document.getElementById('l-prev').textContent     = '₩'+fmt(pIn-pMinus-prevPay);
   document.getElementById('l-prev-sub').textContent = '입고₩'+fmt(pIn)+(pMinus?' − 반품/조정₩'+fmt(pMinus):'');
-  document.getElementById('l-total').textContent    = '₩'+fmt(aIn-totalMinus);
+  document.getElementById('l-total').textContent    = '₩'+fmt(aIn-totalMinus-totPay);
   document.getElementById('l-total-sub').textContent= '입고₩'+fmt(aIn)+(totalMinus?' − 반품/조정₩'+fmt(totalMinus):'');
 
   var dMap = {};
