@@ -4486,11 +4486,12 @@ async function imwebFetchOrders() {
     stEl.textContent = '아임웹 인증 중...';
     var token = await imwebGetToken(apiBase);
 
-    // 3. 최근 14일 범위로 조회 (배송대기는 최근 주문이 대부분)
+    // 3. 최근 7일 범위 조회 (배송대기는 최근 주문)
     var now = Math.floor(Date.now() / 1000);
-    var fromTs = now - 14 * 24 * 60 * 60;
+    var fromTs = now - 7 * 24 * 60 * 60;
     var allOrders = [], page = 1, limit = 100;
-    var batchSize = 50;
+    var batchSize = 100; // 배치 크기 최대화로 prod-orders 호출 최소화
+    var delay = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
     var imwebFetch = async function(url) {
       var r = await fetch(url, {headers: {'access-token': token}});
       var d = await r.json();
@@ -4514,6 +4515,7 @@ async function imwebFetchOrders() {
       return d;
     };
     while (true) {
+      if (page > 1) await delay(2000); // 페이지 사이 2초 대기
       stEl.textContent = '주문 목록 조회 중... (' + allOrders.length + '건)';
       var listData = await imwebFetch(
         apiBase + '/shop/orders?limit=' + limit + '&page=' + page +
@@ -4539,10 +4541,10 @@ async function imwebFetchOrders() {
     });
     var allNos = allOrders.map(function(o) { return o.order_no; });
 
-    // 5. 주문상품 배치 조회 (50건씩, 배치 사이 300ms 대기)
+    // 5. 주문상품 배치 조회 (100건씩, 배치 사이 2초 대기)
     var allItems = [];
     for (var i = 0; i < allNos.length; i += batchSize) {
-      if (i > 0) await new Promise(function(r){ setTimeout(r, 300); });
+      if (i > 0) await delay(2000);
       var batch = allNos.slice(i, i + batchSize);
       stEl.textContent = '상품 조회 중... (' + Math.min(i + batchSize, allNos.length) + '/' + allNos.length + '건)';
       var qs = batch.map(function(n) { return 'order_no[]=' + n; }).join('&');
