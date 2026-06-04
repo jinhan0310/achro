@@ -5108,7 +5108,6 @@ function ocRender() {
         + '<span style="font-size:14px;font-weight:900;color:'+supRkColor+';width:24px;text-align:center">'+(gi+1)+'</span>'
         + '<span style="font-size:14px;font-weight:700;color:var(--green)">'+sup+'</span>'
         + '<span style="font-size:12px;color:var(--text2);margin-left:auto">'+items.length+'개 품목 · 총 <b style="color:var(--text)">'+supTotal+'</b>개</span>'
-        + '<button id="kakao-btn-'+gi+'" onclick="event.stopPropagation();ocCopyKakao('+JSON.stringify(sup)+','+gi+')" style="font-size:11px;padding:4px 10px;border:1px solid #FEE500;border-radius:5px;background:#FEE500;color:#3C1E1E;font-weight:700;cursor:pointer;flex-shrink:0;">📋 카톡</button>'
       + '</div>';
 
     // 하위 상품들 (첫 번째는 거래처명 표시, 나머지는 생략)
@@ -8265,6 +8264,7 @@ input[readonly]{color:var(--text3);background:var(--surface2);cursor:default;}
       </div>
       <div class="ed-footer">
         <button class="btn btn-outline" onclick="ocEditorClose()">닫기</button>
+        <button class="btn btn-outline" style="background:#FEE500;border-color:#FEE500;color:#3C1E1E;font-weight:700;" onclick="ocEditorShowAllKakao()">📋 전체 카톡 메시지</button>
         <button class="btn btn-dark" onclick="ocEditorDownload()">⬇ 편집본 다운로드 (.xlsx)</button>
       </div>
     </div>
@@ -8307,10 +8307,13 @@ function ocEditorRenderTabs() {
   document.getElementById('ed-sup-tabs').innerHTML = sups.map(function(s){
     var cnt = (ocEditorData[s]||[]).reduce(function(a,r){ return a+Number(r.수량); },0);
     var safe = s.replace(/&/g,'&amp;').replace(/"/g,'&quot;');
-    return '<button class="ed-stab'+(s===ocEditorSup?' active':'')+'" data-sup="'+safe+'" onclick="ocEditorSetSup(this.dataset.sup)">'
+    return '<div style="display:flex;align-items:stretch;">'
+      +'<button class="ed-stab'+(s===ocEditorSup?' active':'')+'" data-sup="'+safe+'" onclick="ocEditorSetSup(this.dataset.sup)" style="flex:1;min-width:0;">'
       +'<span style="display:block;overflow:hidden;text-overflow:ellipsis;">'+s+'</span>'
       +'<span style="font-size:10px;font-weight:400;color:'+(s===ocEditorSup?'var(--accent)':'var(--text3)')+';">'+cnt+'개</span>'
-      +'</button>';
+      +'</button>'
+      +'<button data-sup="'+safe+'" onclick="ocEditorCopyKakao(this.dataset.sup,this)" title="카톡 복사" style="padding:0 8px;border:none;border-left:1px solid var(--border);background:none;cursor:pointer;font-size:13px;color:var(--text3);flex-shrink:0;" onmouseover="this.style.background=\'#FEE500\'" onmouseout="this.style.background=\'none\'">📋</button>'
+      +'</div>';
   }).join('');
 }
 
@@ -8337,6 +8340,88 @@ function ocEditorRenderBody() {
 window.ocEditorQty  = function(i,v){ if(ocEditorData[ocEditorSup]) ocEditorData[ocEditorSup][i].수량=Number(v)||0; ocEditorRenderTabs(); };
 window.ocEditorNote = function(i,v){ if(ocEditorData[ocEditorSup]) ocEditorData[ocEditorSup][i].비고=v; };
 window.ocEditorDel  = function(i){ if(!ocEditorData[ocEditorSup]) return; ocEditorData[ocEditorSup].splice(i,1); ocEditorRenderTabs(); ocEditorRenderBody(); };
+
+// ── 카톡 메시지 생성 ──
+function ocBuildKakaoMsg(sup) {
+  var rows = (ocEditorData[sup] || []).filter(function(r){ return Number(r.수량) > 0; });
+  if (!rows.length) return '';
+  var lines = [sup];
+  rows.forEach(function(r) {
+    lines.push((r.거래처상품명||r.상품명) + ' ' + r.컬러 + ' ' + r.사이즈 + ' ' + r.수량);
+  });
+  return lines.join('\n');
+}
+
+window.ocEditorCopyKakao = function(sup, btn) {
+  var text = ocBuildKakaoMsg(sup);
+  if (!text) { alert('수량이 있는 상품이 없습니다.'); return; }
+  var doCopy = function() {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+      document.body.removeChild(ta);
+    } catch(e) {}
+    if (btn) {
+      var orig = btn.innerHTML;
+      btn.innerHTML = '✓'; btn.style.background = 'var(--green)'; btn.style.color = '#fff';
+      setTimeout(function(){ btn.innerHTML = orig; btn.style.background = 'none'; btn.style.color = 'var(--text3)'; }, 2000);
+    }
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(doCopy).catch(doCopy);
+  } else { doCopy(); }
+};
+
+window.ocEditorShowAllKakao = function() {
+  var sups = Object.keys(ocEditorData).sort(function(a,b){ return a.localeCompare(b,'ko'); })
+    .filter(function(s){ return s !== '⚠ 미확인'; });
+  if (!sups.length) { alert('거래처 데이터가 없습니다.'); return; }
+
+  var modal = document.getElementById('oc-kakao-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'oc-kakao-modal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    modal.innerHTML = '<div style="background:#fff;border-radius:14px;width:500px;max-width:95vw;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #eee;flex-shrink:0;">'
+      +'<span style="font-weight:700;font-size:14px;">📋 카톡 메시지</span>'
+      +'<button onclick="this.closest(\'#oc-kakao-modal\').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;">✕</button>'
+      +'</div>'
+      +'<div id="oc-kakao-list" style="overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;"></div>'
+      +'</div>';
+    document.body.appendChild(modal);
+  }
+
+  var list = document.getElementById('oc-kakao-list');
+  list.innerHTML = sups.map(function(s, idx) {
+    var msg = ocBuildKakaoMsg(s);
+    if (!msg) return '';
+    var safeId = 'kakao-ta-' + idx;
+    return '<div style="border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#f8f9fa;border-bottom:1px solid #e2e8f0;">'
+      +'<span style="font-weight:700;font-size:13px;color:#1a1a2e;">'+s+'</span>'
+      +'<button id="copy-btn-'+idx+'" onclick="ocCopyFromTextarea(\''+safeId+'\','+idx+')" style="font-size:11px;padding:4px 12px;border:1px solid #FEE500;border-radius:5px;background:#FEE500;color:#3C1E1E;font-weight:700;cursor:pointer;">📋 복사</button>'
+      +'</div>'
+      +'<textarea id="'+safeId+'" readonly style="width:100%;box-sizing:border-box;padding:12px 14px;font-size:12px;font-family:\'Pretendard\',sans-serif;border:none;resize:none;background:#fff;color:#333;line-height:1.7;min-height:80px;" onclick="this.select()">'+msg+'</textarea>'
+      +'</div>';
+  }).filter(Boolean).join('');
+
+  modal.style.display = 'flex';
+};
+
+window.ocCopyFromTextarea = function(taId, idx) {
+  var ta = document.getElementById(taId);
+  if (!ta) return;
+  ta.select();
+  document.execCommand('copy');
+  var btn = document.getElementById('copy-btn-'+idx);
+  if (btn) {
+    btn.textContent = '✓ 복사됨!';
+    btn.style.background = '#22c55e'; btn.style.color = '#fff'; btn.style.borderColor = '#22c55e';
+    setTimeout(function(){ btn.innerHTML='📋 복사'; btn.style.background='#FEE500'; btn.style.color='#3C1E1E'; btn.style.borderColor='#FEE500'; }, 2000);
+  }
+};
 
 window.ocEditorAdd = function() {
   var ci=document.getElementById('ed-add-code');
