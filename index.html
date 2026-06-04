@@ -805,11 +805,22 @@ select option { background: #fff; }
   <!-- 거래처별 뷰 -->
   <div id="lview-vendor" style="display:block;">
     <!-- KPI 카드 -->
-    <div class="kpi-grid" style="margin-bottom:20px;">
-      <div class="kpi-card"><div class="kpi-label">전잔</div><div class="kpi-value kv-orange" id="l-prev">&#8361;0</div><div class="kpi-sub" id="l-prev-sub">전일까지</div></div>
-      <div class="kpi-card"><div class="kpi-label">오늘 입고금액</div><div class="kpi-value kv-dark" id="l-today">&#8361;0</div><div class="kpi-sub" id="l-today-cnt">0건</div></div>
-      <div class="kpi-card"><div class="kpi-label">최종잔</div><div class="kpi-value kv-green" id="l-total">&#8361;0</div><div class="kpi-sub" id="l-total-sub">오늘 포함</div></div>
-      <div class="kpi-card"><div class="kpi-label">오늘 판매금액</div><div class="kpi-value kv-blue" id="l-sale">&#8361;0</div><div class="kpi-sub" id="l-sale-cnt">0건</div></div>
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px;">
+      <div class="kpi-card kpi-clickable" onclick="openKpiModal('prev')" title="업체별 전잔 보기">
+        <div class="kpi-label">전잔 <span style="font-size:9px;opacity:.4;font-weight:400;letter-spacing:0;">▼ 업체별</span></div>
+        <div class="kpi-value kv-orange" id="l-prev">&#8361;0</div>
+        <div class="kpi-sub" id="l-prev-sub">전일까지</div>
+      </div>
+      <div class="kpi-card kpi-clickable" onclick="openKpiModal('today')" title="업체별 오늘 입고금액 보기">
+        <div class="kpi-label">오늘 입고금액 <span style="font-size:9px;opacity:.4;font-weight:400;letter-spacing:0;">▼ 업체별</span></div>
+        <div class="kpi-value kv-dark" id="l-today">&#8361;0</div>
+        <div class="kpi-sub" id="l-today-cnt">0건</div>
+      </div>
+      <div class="kpi-card kpi-clickable" onclick="openKpiModal('total')" title="업체별 최종잔 보기">
+        <div class="kpi-label">최종잔 <span style="font-size:9px;opacity:.4;font-weight:400;letter-spacing:0;">▼ 업체별</span></div>
+        <div class="kpi-value kv-green" id="l-total">&#8361;0</div>
+        <div class="kpi-sub" id="l-total-sub">오늘 포함</div>
+      </div>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
       <div style="font-size:15px;font-weight:700;">거래처별 정산</div>
@@ -1809,6 +1820,68 @@ function mergeVendor(fromName, toName) {
 }
 
 
+function openKpiModal(type) {
+  var txs = loadTx();
+  var minus = loadMinus();
+  var payments = (typeof loadPayments === 'function' ? loadPayments() : []);
+  var vatVendors = (typeof loadVatVendors === 'function' ? loadVatVendors() : []);
+  var today = todayStr();
+
+  var vMap = {};
+  txs.forEach(function(t) {
+    if (t.type !== 'in' || !t.vendor) return;
+    if (!vMap[t.vendor]) vMap[t.vendor] = { prevIn: 0, todayIn: 0 };
+    if (t.date < today) vMap[t.vendor].prevIn += t.amount;
+    if (t.date === today) vMap[t.vendor].todayIn += t.amount;
+  });
+
+  var mMap = {};
+  minus.forEach(function(m) {
+    if (!mMap[m.vendor]) mMap[m.vendor] = { prevMinus: 0, todayMinus: 0 };
+    if (m.date < today) mMap[m.vendor].prevMinus += m.amount;
+    if (m.date === today) mMap[m.vendor].todayMinus += m.amount;
+  });
+
+  var vendors = Object.keys(vMap).sort(function(a, b) { return a.localeCompare(b, 'ko'); });
+
+  var rows = vendors.map(function(v) {
+    var vd = vMap[v] || { prevIn: 0, todayIn: 0 };
+    var md = mMap[v] || { prevMinus: 0, todayMinus: 0 };
+    var isVat = vatVendors.indexOf(v) >= 0;
+    var pays = payments.filter(function(p) { return p.vendor === v; });
+    var prevPay = pays.filter(function(p) { return p.date < today; }).reduce(function(s, p) { return s + p.amount; }, 0);
+    var todayPay = pays.filter(function(p) { return p.date === today; }).reduce(function(s, p) { return s + p.amount; }, 0);
+    var 전잔 = vd.prevIn - md.prevMinus - prevPay;
+    var todayInV = isVat ? Math.round(vd.todayIn * 1.1) : vd.todayIn;
+    var 최종잔 = 전잔 + todayInV - md.todayMinus - todayPay;
+
+    var val = type === 'prev' ? 전잔 : type === 'today' ? vd.todayIn : 최종잔;
+    return { vendor: v, val: val };
+  }).filter(function(r) { return r.val !== 0; })
+    .sort(function(a, b) { return b.val - a.val; });
+
+  var titles = { prev: '업체별 전잔', today: '업체별 오늘 입고금액', total: '업체별 최종잔' };
+  var colHeaders = { prev: '전잔', today: '오늘 입고금액', total: '최종잔' };
+  document.getElementById('kpi-modal-title').textContent = titles[type] || '';
+  document.getElementById('kpi-modal-col-header').textContent = colHeaders[type] || '';
+
+  var total = rows.reduce(function(s, r) { return s + r.val; }, 0);
+  var html = rows.map(function(r) {
+    var color = r.val < 0 ? 'color:#e53e3e;' : '';
+    return '<tr style="border-bottom:1px solid #f0ece8;">'
+      + '<td style="padding:10px 16px;color:#1a1814;">' + r.vendor + '</td>'
+      + '<td style="padding:10px 16px;text-align:right;font-family:\'DM Mono\',monospace;font-weight:500;' + color + '">₩' + fmt(r.val) + '</td>'
+      + '</tr>';
+  }).join('');
+  document.getElementById('kpi-modal-body').innerHTML = html || '<tr><td colspan="2" style="padding:24px;text-align:center;color:#aaa;">데이터 없음</td></tr>';
+  document.getElementById('kpi-modal-count').textContent = rows.length + '개 거래처';
+  document.getElementById('kpi-modal-total').textContent = '합계 ₩' + fmt(total);
+  document.getElementById('kpi-modal-bg').style.display = 'flex';
+}
+function closeKpiModal() {
+  document.getElementById('kpi-modal-bg').style.display = 'none';
+}
+
 function openMergeModal() {
   // 현재 모든 거래처 목록
   var txs = loadTx();
@@ -1864,8 +1937,6 @@ function renderVendorLedger(searchQ) {
     el=document.getElementById('l-today-cnt');if(el) el.textContent=tInC+'건'+(tMinus?' (−₩'+fmt(tMinus)+')':'');
     el=document.getElementById('l-total');  if(el) el.textContent='₩'+fmt(aIn-totMinus-totPay);
     el=document.getElementById('l-total-sub');if(el) el.textContent='입고₩'+fmt(aIn)+(totMinus?'−반품₩'+fmt(totMinus):'');
-    el=document.getElementById('l-sale');   if(el) el.textContent='₩'+fmt(tSale);
-    el=document.getElementById('l-sale-cnt');if(el) el.textContent=tSaleC+'건';
   })();
   var _sq = (searchQ||'').toLowerCase();
   var container = document.getElementById('vendor-ledger-list');
@@ -2441,8 +2512,6 @@ function renderLedger() {
   document.getElementById('l-prev-sub').textContent = '입고₩'+fmt(pIn)+(pMinus?' − 반품/조정₩'+fmt(pMinus):'');
   document.getElementById('l-total').textContent    = '₩'+fmt(aIn-totalMinus);
   document.getElementById('l-total-sub').textContent= '입고₩'+fmt(aIn)+(totalMinus?' − 반품/조정₩'+fmt(totalMinus):'');
-  document.getElementById('l-sale').textContent     = '₩'+fmt(tSale);
-  document.getElementById('l-sale-cnt').textContent = tSaleC+'건';
 
   var dMap = {};
   all.filter(function(t){ return (!from||t.date>=from)&&(!to||t.date<=to); }).forEach(function(fx){
@@ -2883,6 +2952,29 @@ window.addEventListener('DOMContentLoaded', function() {
     <div style="display:flex;gap:8px;padding:0 20px 20px;">
       <button type="button" onclick="doMerge()" style="flex:1;padding:10px;background:#1a1814;color:#fff;border:none;border-radius:8px;font-size:13px;font-family:inherit;cursor:pointer;font-weight:700;">통합 실행</button>
       <button type="button" onclick="closeMergeModal()" style="flex:1;padding:10px;background:transparent;border:1px solid #ccc8c2;border-radius:8px;font-size:13px;font-family:inherit;cursor:pointer;">취소</button>
+    </div>
+  </div>
+</div>
+
+<!-- KPI 업체별 모달 -->
+<div id="kpi-modal-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:9999;align-items:center;justify-content:center;" onclick="if(event.target===this)closeKpiModal()">
+  <div style="background:#fff;border-radius:14px;width:480px;max-width:94vw;max-height:80vh;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,0.18);overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #e2ddd8;flex-shrink:0;">
+      <span id="kpi-modal-title" style="font-weight:700;font-size:13px;"></span>
+      <button type="button" onclick="closeKpiModal()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#6b6560;">✕</button>
+    </div>
+    <div style="overflow-y:auto;flex:1;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead><tr style="position:sticky;top:0;background:#f7f5f2;">
+          <th style="padding:10px 16px;text-align:left;font-weight:600;color:#888;border-bottom:1px solid #e2ddd8;">거래처</th>
+          <th style="padding:10px 16px;text-align:right;font-weight:600;color:#888;border-bottom:1px solid #e2ddd8;" id="kpi-modal-col-header"></th>
+        </tr></thead>
+        <tbody id="kpi-modal-body"></tbody>
+      </table>
+    </div>
+    <div style="padding:12px 20px;border-top:1px solid #e2ddd8;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;background:#f7f5f2;">
+      <span style="font-size:11px;color:#888;" id="kpi-modal-count"></span>
+      <span style="font-weight:700;font-size:13px;" id="kpi-modal-total"></span>
     </div>
   </div>
 </div>
@@ -7624,6 +7716,8 @@ window._masterProducts = pmData;
 .kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:32px;}
 .kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px 22px;transition:box-shadow .2s;}
 .kpi-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.07);}
+.kpi-clickable{cursor:pointer;user-select:none;}
+.kpi-clickable:hover{box-shadow:0 4px 20px rgba(0,0,0,.13);border-color:var(--accent);}
 .kpi-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text3);margin-bottom:8px;}
 .kpi-value{font-family:'DM Mono',monospace;font-size:26px;font-weight:500;line-height:1;}
 .kpi-sub{font-size:11px;color:var(--text3);margin-top:4px;}
