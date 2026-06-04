@@ -223,7 +223,12 @@ async function fbUploadAll() {
     alert('클라우드 업로드 완료!\n다른 기기에서 로그인하면 동기화된 데이터를 볼 수 있습니다.');
   } catch(e) {
     if (st) st.textContent = '업로드 실패';
-    alert('업로드 실패: ' + e.message);
+    var msg = e.message || String(e);
+    var hint = '';
+    if (msg.toLowerCase().includes('permission') || msg.includes('insufficient')) {
+      hint = '\n\n【원인】 Firestore 보안 규칙 문제\n【해결】 Firebase 콘솔 → Firestore → 규칙 탭에서\n아래 규칙으로 교체하세요:\n\nrules_version = \'2\';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /achro/{docId} {\n      allow read, write: if request.auth != null;\n    }\n  }\n}';
+    }
+    alert('업로드 실패: ' + msg + hint);
   }
 }
 
