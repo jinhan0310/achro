@@ -3458,6 +3458,11 @@ function renderVendorHistTable() {
         <div style="font-size:15px;font-weight:700;margin-bottom:6px">주문 내역</div>
         <div style="font-size:12px;color:var(--text2);margin-bottom:12px">imweb 주문 엑셀 파일<br>(.xlsx / .xls)</div>
         <button class="btn btn-outline" style="font-size:12px" onclick="event.stopPropagation();document.getElementById('oc-fileA').click()">파일 선택</button>
+        <div style="margin:12px 0;display:flex;align-items:center;gap:8px;"><hr style="flex:1;border:none;border-top:1px solid var(--border);"><span style="font-size:11px;color:var(--text3);white-space:nowrap;">또는</span><hr style="flex:1;border:none;border-top:1px solid var(--border);"></div>
+        <div style="display:flex;align-items:center;gap:6px;justify-content:center;" onclick="event.stopPropagation()">
+          <input type="date" id="imweb-date" style="font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);color:var(--text);font-family:inherit;">
+          <button id="imweb-btn" class="btn btn-dark" style="font-size:12px;padding:6px 12px;white-space:nowrap;" onclick="event.stopPropagation();imwebFetchOrders()">아임웹 불러오기</button>
+        </div>
         <div style="margin-top:10px;font-size:12px;color:var(--text2);min-height:18px" id="oc-stA">파일을 드래그하거나 버튼을 눌러주세요</div>
       </div>
       <div style="border:2px dashed var(--border);border-radius:12px;padding:24px 16px;text-align:center;cursor:pointer;background:var(--surface);transition:border-color .2s" id="oc-dropB"
@@ -4423,6 +4428,148 @@ function normalizeColor(s) {
 
 function ocGetColor(s) { if(!s) return '미지정'; var m = s.match(/[Cc]olor\s*:\s*([^\/\n]+)/i); return m ? normalizeColor(m[1].trim()) : '미지정'; }
 function ocGetSize(s)  { if(!s) return 'FREE';  var m = s.match(/[Ss]ize\s*:\s*([^\s\/\n]+)/i);  return m ? m[1].trim() : 'FREE'; }
+
+// ── 아임웹 API 주문 불러오기 ──
+var IMWEB_KEY    = '5399e90b11516c359e0e1248580ad5fb115487c39f';
+var IMWEB_SECRET = '2bfa1a0302863c329f8201';
+var IMWEB_BASE   = 'https://api.imweb.me/v2';
+
+async function imwebFetchOrders() {
+  var btn    = document.getElementById('imweb-btn');
+  var stEl   = document.getElementById('oc-stA');
+  var dateEl = document.getElementById('imweb-date');
+  btn.disabled = true;
+  btn.textContent = '불러오는 중...';
+  try {
+    // 1. 토큰 발급
+    stEl.textContent = '아임웹 인증 중...';
+    var authRes = await fetch(IMWEB_BASE + '/auth', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key: IMWEB_KEY, secret: IMWEB_SECRET})
+    });
+    var authData = await authRes.json();
+    if (authData.code !== 200) throw new Error('인증 실패: ' + authData.msg);
+    var token = authData.access_token;
+
+    // 2. 선택 날짜 or 오늘 기준 타임스탬프
+    var dateVal = dateEl.value; // 'YYYY-MM-DD'
+    var base = dateVal ? new Date(dateVal) : new Date();
+    var y = base.getFullYear(), mo = base.getMonth(), d = base.getDate();
+    var fromTs = Math.floor(new Date(y, mo, d, 0, 0, 0).getTime() / 1000);
+    var toTs   = Math.floor(new Date(y, mo, d, 23, 59, 59).getTime() / 1000);
+
+    // 3. 주문 목록 전체 페이지 수집
+    var allOrders = [], page = 1, limit = 100;
+    while (true) {
+      stEl.textContent = '주문 목록 조회 중... (' + allOrders.length + '건)';
+      var listRes = await fetch(
+        IMWEB_BASE + '/shop/orders?limit=' + limit + '&page=' + page +
+        '&order_time_from=' + fromTs + '&order_time_to=' + toTs,
+        {headers: {'access-token': token}}
+      );
+      var listData = await listRes.json();
+      if (listData.code !== 200) throw new Error('주문 목록 오류: ' + listData.msg);
+      var list = listData.data.list || [];
+      list.forEach(function(o) { allOrders.push(o); });
+      if (list.length < limit) break;
+      page++;
+    }
+
+    if (!allOrders.length) {
+      stEl.textContent = '해당 날짜 주문이 없습니다.';
+      return;
+    }
+
+    // ordererMap, orderTimeMap 구성
+    var ordererMap = {}, orderTimeMap = {};
+    allOrders.forEach(function(o) {
+      ordererMap[o.order_no]   = o.orderer ? o.orderer.name : '';
+      orderTimeMap[o.order_no] = o.order_time || 0;
+    });
+    var allNos = allOrders.map(function(o) { return o.order_no; });
+
+    // 4. 주문상품 배치 조회 (20건씩)
+    var allItems = [], batchSize = 20;
+    for (var i = 0; i < allNos.length; i += batchSize) {
+      var batch = allNos.slice(i, i + batchSize);
+      stEl.textContent = '상품 조회 중... (' + Math.min(i + batchSize, allNos.length) + '/' + allNos.length + '건)';
+      var qs = batch.map(function(n) { return 'order_no[]=' + n; }).join('&');
+      var prodRes = await fetch(IMWEB_BASE + '/shop/prod-orders?' + qs, {headers: {'access-token': token}});
+      var prodData = await prodRes.json();
+      if (prodData.code !== 200) continue;
+
+      for (var orderNo in prodData.data) {
+        var prodGroups = prodData.data[orderNo];
+        var orderer   = ordererMap[orderNo] || '';
+        var orderTime = orderTimeMap[orderNo] || 0;
+        var orderDateStr = orderTime
+          ? new Date(orderTime * 1000).toLocaleString('ko-KR')
+          : '';
+        for (var pgKey in prodGroups) {
+          var items = (prodGroups[pgKey].items || []);
+          items.forEach(function(item) {
+            var prodName = item.prod_name || '';
+            var codeMatch = prodName.match(/\[([A-Z0-9]+)\]/);
+            var code = codeMatch ? codeMatch[1] : '';
+            var cleanName = prodName.replace(/\[.*?\]/g, '').trim();
+            var color = '', size = '';
+            (item.options || []).forEach(function(optGroup) {
+              optGroup.forEach(function(opt) {
+                var names = opt.option_name_list || [];
+                var vals  = opt.value_name_list  || [];
+                names.forEach(function(n, idx) {
+                  var v = vals[idx] || '';
+                  if (/color/i.test(n) || /색/.test(n)) color = v;
+                  else if (/size/i.test(n) || /사이즈/.test(n)) size = v;
+                });
+              });
+            });
+            var qty = (item.payment || {}).count || 1;
+            allItems.push({
+              주문번호: orderNo,
+              상품명: cleanName,
+              품번: ocNormCode(code),
+              컬러: normalizeColor(color) || '미지정',
+              사이즈: size || 'FREE',
+              수량: qty,
+              수령자: orderer,
+              주문일: orderDateStr,
+              isKodiOpt: false,
+              kodiOptStr: ''
+            });
+          });
+        }
+      }
+    }
+
+    if (!allItems.length) { stEl.textContent = '상품 데이터가 없습니다.'; return; }
+
+    // 5. ocOrders 설정 후 UI 갱신
+    ocOrders = allItems;
+    ocOrderDate = dateVal || new Date().toLocaleDateString('ko-KR');
+    document.getElementById('oc-dropA').style.borderColor = 'var(--green)';
+    ocSetStA('✓ 아임웹 ' + allItems.length + '건 (' + (dateVal || '오늘') + ')');
+    ocSetChip('oc-chipO', '주문 ' + allItems.length + '건', '#052e16', 'var(--green)');
+    ocCheckReady();
+
+  } catch(e) {
+    alert('아임웹 불러오기 실패: ' + e.message);
+    stEl.textContent = '불러오기 실패. 다시 시도해주세요.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '아임웹 불러오기';
+  }
+}
+
+// 아임웹 날짜 기본값 = 오늘
+window.addEventListener('DOMContentLoaded', function() {
+  var el = document.getElementById('imweb-date');
+  if (el) {
+    var t = new Date();
+    el.value = t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0');
+  }
+});
 
 function ocParseOrder(wb, fname) {
   var ws = wb.Sheets[wb.SheetNames[0]];
