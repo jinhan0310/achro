@@ -4515,7 +4515,8 @@ async function imwebFetchOrders() {
       stEl.textContent = '주문 목록 조회 중... (' + allOrders.length + '건)';
       var listData = await imwebFetch(
         apiBase + '/shop/orders?limit=' + limit + '&page=' + page +
-        '&order_time_from=' + fromTs + '&order_time_to=' + toTs
+        '&order_time_from=' + fromTs + '&order_time_to=' + toTs +
+        '&prod_order_status=STANDBY'  // 배송대기 상태만
       );
       if (listData.code !== 200) throw new Error('주문 목록 오류: ' + listData.msg);
       var list = listData.data.list || [];
@@ -4554,7 +4555,9 @@ async function imwebFetchOrders() {
           ? new Date(orderTime * 1000).toLocaleString('ko-KR')
           : '';
         for (var pgKey in prodGroups) {
-          var items = (prodGroups[pgKey].items || []);
+          var pg = prodGroups[pgKey];
+          if (pg.status !== 'STANDBY') continue;  // 배송대기만
+          var items = (pg.items || []);
           items.forEach(function(item) {
             var prodName = item.prod_name || '';
             var codeMatch = prodName.match(/\[([A-Z0-9]+)\]/);
