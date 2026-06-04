@@ -1837,12 +1837,19 @@ function openKpiModal(type) {
 
   var mMap = {};
   minus.forEach(function(m) {
+    if (!m.vendor) return;
     if (!mMap[m.vendor]) mMap[m.vendor] = { prevMinus: 0, todayMinus: 0 };
     if (m.date < today) mMap[m.vendor].prevMinus += m.amount;
     if (m.date === today) mMap[m.vendor].todayMinus += m.amount;
   });
 
-  var vendors = Object.keys(vMap).sort(function(a, b) { return a.localeCompare(b, 'ko'); });
+  // 입고·마이너스·입금 전체 업체 합산 (KPI 카드와 동일한 범위)
+  var allVendors = {};
+  Object.keys(vMap).forEach(function(v) { allVendors[v] = true; });
+  Object.keys(mMap).forEach(function(v) { allVendors[v] = true; });
+  payments.forEach(function(p) { if (p.vendor) allVendors[p.vendor] = true; });
+
+  var vendors = Object.keys(allVendors).sort(function(a, b) { return a.localeCompare(b, 'ko'); });
 
   var rows = vendors.map(function(v) {
     var vd = vMap[v] || { prevIn: 0, todayIn: 0 };
