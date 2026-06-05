@@ -3912,10 +3912,10 @@ function renderVendorHistTable() {
 
     <div class="ir-card" style="overflow-x:auto;padding:0;">
       <table>
-        <colgroup><col style="width:30px;"><col style="width:130px;"><col><col style="width:22%;"><col style="width:17%;"></colgroup>
+        <colgroup><col style="width:30px;"><col style="width:130px;"><col><col style="width:17%;"></colgroup>
         <thead><tr>
           <th style="padding-left:12px;"></th>
-          <th>거래일시</th><th>받는분</th><th>내통장표시</th>
+          <th>거래일시</th><th>받는분</th>
           <th style="text-align:right;padding-right:12px;">출금금액(원)</th>
         </tr></thead>
         <tbody id="ir-tableBody"></tbody>
@@ -6039,6 +6039,21 @@ function taxExportCSV() {
       if (irSelectedIds.has(i) && d.recipient) irCheckedVendors.add(d.recipient);
     });
     irRenderVendorList();
+    irUpdateQuickButtonColors();
+  }
+
+  function irUpdateQuickButtonColors() {
+    document.querySelectorAll('#ir-quickButtons .ir-tag').forEach(function(btn) {
+      var m = btn.textContent;
+      var vendors = Object.keys(irVendorMap).filter(function(v) {
+        return irDATA.some(function(d) {
+          return d.recipient === v && (d.memo||'').replace(/　/g,'') === m;
+        });
+      });
+      var allDone = vendors.length > 0 && vendors.every(function(v) { return irCheckedVendors.has(v); });
+      btn.style.color = allDone ? '#3d8c5a' : '';
+      btn.style.fontWeight = allDone ? '700' : '';
+    });
   }
 
   window.irToggleRow = function(id, checked) {
@@ -6093,8 +6108,7 @@ function taxExportCSV() {
       return '<tr data-id="'+r._id+'" class="'+(checked?'ir-sel-row':'')+'" onclick="irRowClick(event,'+r._id+')">'
         +'<td style="padding:7px 4px 7px 12px;"><input type="checkbox" class="ir-row-check" data-id="'+r._id+'" '+(checked?'checked':'')+' onclick="event.stopPropagation();irToggleRow('+r._id+',this.checked)"></td>'
         +'<td class="ir-date-cell">'+r.date+'</td>'
-        +'<td>'+r.recipient+'</td>'
-        +'<td>'+(r.memo?'<span class="ir-badge">'+r.memo+'</span>':'<span style="color:var(--text3);font-size:12px;">—</span>')+'</td>'
+        +'<td>'+r.recipient+(r.memo?' <span class="ir-badge">'+r.memo+'</span>':'')+'</td>'
         +'<td class="ir-amount-col" style="padding-right:12px;">'+Math.round(r.amount).toLocaleString()+'</td>'
         +'</tr>';
     }).join('');
