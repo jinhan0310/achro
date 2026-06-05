@@ -5967,7 +5967,7 @@ function taxExportCSV() {
       var esc=name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
       var memos=[...new Set(irDATA.filter(function(d){return d.recipient===name&&d.memo&&d.memo.trim()&&!d.memo.includes('세액');}).map(function(d){return d.memo.trim();}))];
       var memoBadges=memos.map(function(m){return '<span class="ir-badge" style="font-size:10px;padding:1px 5px;">'+m+'</span>';}).join('');
-      return '<div class="ir-vendor-item'+(isActive?' active':'')+(isChecked?' ir-checked':'')+'" onclick="irSelectVendor(\''+esc+'\')">'
+      return '<div class="ir-vendor-item'+(isActive?' active':'')+(isChecked?' ir-checked':'')+'" data-vname="'+esc+'" onclick="irSelectVendor(\''+esc+'\')">'
         +'<input type="checkbox" class="ir-vcb"'+(isChecked?' checked':'')+' onclick="irToggleVendorCheck(event,\''+esc+'\')">'
         +'<span class="ir-vname" style="color:'+nameColor+';">'+name+'</span>'
         +memoBadges
@@ -6011,6 +6011,14 @@ function taxExportCSV() {
         document.getElementById('ir-recipientInput').value='';
         irActiveVendor=null;
         irRenderVendorList(); irFilterData();
+        // 해당 메모의 첫 번째 업체로 왼쪽 목록 스크롤
+        var firstVendor = Object.keys(irVendorMap).find(function(v){
+          return irDATA.some(function(d){ return d.recipient===v && (d.memo||'').replace(/　/g,'')===m; });
+        });
+        if (firstVendor) {
+          var item = document.querySelector('#ir-vendorList [data-vname="'+firstVendor.replace(/\\/g,'\\\\').replace(/"/g,'&quot;')+'"]');
+          if (item) item.scrollIntoView({behavior:'smooth', block:'nearest'});
+        }
       };
       qBtns.appendChild(b);
     });
