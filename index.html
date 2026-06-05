@@ -6007,16 +6007,6 @@ function taxExportCSV() {
         document.getElementById('ir-memoInput').value=m;
         document.getElementById('ir-recipientInput').value='';
         irActiveVendor=null;
-        // 내통장표시(memo)와 일치하는 업체를 왼쪽 목록에서 찾아 자동 체크
-        var matched = Object.keys(irVendorMap).filter(function(recipient){
-          var cleanMemo = (irDATA.find(function(d){ return d.recipient===recipient; })||{memo:''}).memo;
-          cleanMemo = (cleanMemo||'').replace(/\u3000/g,'');
-          // 해당 업체의 모든 거래에서 memo가 m과 일치하는지 확인
-          return irDATA.some(function(d){
-            return d.recipient===recipient && (d.memo||'').replace(/\u3000/g,'')===m;
-          });
-        });
-        matched.forEach(function(name){ irCheckedVendors.add(name); });
         irRenderVendorList(); irFilterData();
       };
       qBtns.appendChild(b);
