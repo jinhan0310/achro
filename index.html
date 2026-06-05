@@ -3861,6 +3861,12 @@ function renderVendorHistTable() {
       </div>
       <div id="ir-vendorList" style="max-height:560px;overflow-y:auto;display:flex;flex-direction:column;gap:1px;"></div>
     </div>
+
+    <!-- 월별 저장 이력 -->
+    <div class="ir-card" style="padding:1rem;margin-top:10px;">
+      <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px;">월별 작업 이력</div>
+      <div id="ir-history-list"><div style="font-size:12px;color:var(--text3);">저장 이력 없음</div></div>
+    </div>
   </div>
 
   <!-- 오른쪽: 조회 영역 -->
@@ -5870,6 +5876,7 @@ function taxExportCSV() {
 
   // 드래그앤드롭
   document.addEventListener('DOMContentLoaded', function(){
+    irRenderHistory();
     var dz = document.getElementById('ir-dropZone');
     if (!dz) return;
     dz.addEventListener('dragover', function(e){ e.preventDefault(); dz.classList.add('dragover'); });
@@ -6046,6 +6053,60 @@ function taxExportCSV() {
     irRenderVendorList(); irFilterData();
   };
 
+  // ── 월별 자동저장 ──
+  var IR_HIST_KEY = 'achro_ir_history';
+  var _irSaveTimer = null;
+
+  function irAutoSave() {
+    clearTimeout(_irSaveTimer);
+    _irSaveTimer = setTimeout(function() {
+      if (irCheckedVendors.size === 0) return;
+      var now = new Date();
+      var yearMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+      var selectedTotal = 0, selCount = 0;
+      irDATA.forEach(function(d, i) { if (irSelectedIds.has(i)) { selectedTotal += d.amount; selCount++; } });
+      var record = {
+        yearMonth: yearMonth,
+        savedAt: now.toISOString(),
+        checkedVendors: [...irCheckedVendors].sort(function(a,b){ return a.localeCompare(b,'ko'); }),
+        selectedTotal: selectedTotal,
+        vat: Math.round(selectedTotal * 0.1),
+        selCount: selCount
+      };
+      var hist = irLoadHistory();
+      var idx = hist.findIndex(function(h){ return h.yearMonth === yearMonth; });
+      if (idx >= 0) hist[idx] = record; else hist.unshift(record);
+      hist.sort(function(a,b){ return b.yearMonth.localeCompare(a.yearMonth); });
+      localStorage.setItem(IR_HIST_KEY, JSON.stringify(hist));
+      irRenderHistory();
+    }, 1000);
+  }
+
+  function irLoadHistory() {
+    try { return JSON.parse(localStorage.getItem(IR_HIST_KEY) || '[]'); } catch(e) { return []; }
+  }
+
+  function irRenderHistory() {
+    var container = document.getElementById('ir-history-list');
+    if (!container) return;
+    var hist = irLoadHistory();
+    if (!hist.length) { container.innerHTML = '<div style="font-size:12px;color:var(--text3);">저장 이력 없음</div>'; return; }
+    container.innerHTML = hist.map(function(h) {
+      var d = new Date(h.savedAt);
+      var dateStr = d.getFullYear()+'.'+(d.getMonth()+1)+'.'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+      return '<div style="padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+        + '<span style="font-size:13px;font-weight:700;color:var(--text);">'+h.yearMonth+'</span>'
+        + '<span style="font-size:11px;color:var(--text3);">'+dateStr+' 저장</span>'
+        + '</div>'
+        + '<div style="font-size:12px;color:var(--text2);margin-bottom:4px;">업체 <b>'+h.checkedVendors.length+'곳</b> · '+h.selCount+'건</div>'
+        + '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px;">선택합계 ₩'+h.selectedTotal.toLocaleString()+'</div>'
+        + '<div style="font-size:12px;color:#e67e00;margin-bottom:6px;">부가세 10% ₩'+h.vat.toLocaleString()+'</div>'
+        + '<div style="font-size:11px;color:var(--text3);line-height:1.6;">'+h.checkedVendors.join(' · ')+'</div>'
+        + '</div>';
+    }).join('');
+  }
+
   // 모든 거래처를 irSelectedIds 기준으로 체크/해제 재동기화
   function irSyncAllVendorChecks() {
     irCheckedVendors.clear();
@@ -6054,6 +6115,7 @@ function taxExportCSV() {
     });
     irRenderVendorList();
     irUpdateQuickButtonColors();
+    irAutoSave();
   }
 
   function irUpdateQuickButtonColors() {
