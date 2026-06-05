@@ -5965,7 +5965,7 @@ function taxExportCSV() {
       var isActive=irActiveVendor===name, isChecked=irCheckedVendors.has(name);
       var nameColor=isChecked?'#E24B4A':(isActive?'#1a73e8':'var(--text)');
       var esc=name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      var memos=[...new Set(irDATA.filter(function(d){return d.recipient===name&&d.memo&&d.memo.trim();}).map(function(d){return d.memo.trim();}))];
+      var memos=[...new Set(irDATA.filter(function(d){return d.recipient===name&&d.memo&&d.memo.trim()&&!d.memo.includes('세액');}).map(function(d){return d.memo.trim();}))];
       var memoBadges=memos.map(function(m){return '<span class="ir-badge" style="font-size:10px;padding:1px 5px;">'+m+'</span>';}).join('');
       return '<div class="ir-vendor-item'+(isActive?' active':'')+(isChecked?' ir-checked':'')+'" onclick="irSelectVendor(\''+esc+'\')">'
         +'<input type="checkbox" class="ir-vcb"'+(isChecked?' checked':'')+' onclick="irToggleVendorCheck(event,\''+esc+'\')">'
