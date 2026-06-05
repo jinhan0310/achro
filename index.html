@@ -631,6 +631,9 @@ select option { background: #fff; }
 #page-issuereq tr.ir-sel-row td { background:#e8f0fe; }
 #page-issuereq tr:hover td { background:var(--surface2); }
 #page-issuereq tr.ir-sel-row:hover td { background:#dce8fd; }
+#page-issuereq tr.ir-vat-row td { background:#f5f0e8; color:#a08050; }
+#page-issuereq tr.ir-vat-row:hover td { background:#ede8dc; }
+#page-issuereq tr.ir-vat-row .ir-date-cell { color:#c8a060; }
 #page-issuereq .ir-amount-col { text-align:right; font-weight:600; font-family:'DM Mono',monospace; }
 #page-issuereq .ir-date-cell { color:#c94040; font-size:12px; font-weight:700; }
 #page-issuereq .ir-badge { font-size:12px; padding:2px 7px; border-radius:20px; background:var(--surface2); color:var(--text2); }
@@ -6190,7 +6193,8 @@ function taxExportCSV() {
     empty.textContent='';
     tbody.innerHTML=rows.map(function(r){
       var checked=irSelectedIds.has(r._id);
-      return '<tr data-id="'+r._id+'" class="'+(checked?'ir-sel-row':'')+'" onclick="irRowClick(event,'+r._id+')">'
+      var isVat = (r.memo||'').includes('세액');
+      return '<tr data-id="'+r._id+'" class="'+(checked?'ir-sel-row':isVat?'ir-vat-row':'')+'" onclick="irRowClick(event,'+r._id+')">'
         +'<td style="padding:7px 4px 7px 12px;"><input type="checkbox" class="ir-row-check" data-id="'+r._id+'" '+(checked?'checked':'')+' onclick="event.stopPropagation();irToggleRow('+r._id+',this.checked)"></td>'
         +'<td class="ir-date-cell">'+r.date+'</td>'
         +'<td>'+r.recipient+(r.memo?' <span class="ir-badge">'+r.memo+'</span>':'')+'</td>'
