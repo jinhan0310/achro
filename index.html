@@ -660,6 +660,129 @@ select option { background: #fff; }
 #page-settle { display:none; padding:0 !important; max-width:100% !important; height:calc(100vh - 90px); }
 #page-settle.active { display:block !important; }
 #settle-frame { width:100%; height:100%; border:none; display:block; }
+
+/* ════════════════════════════════════════
+   재고현황 탭 모던 리디자인 (scoped)
+════════════════════════════════════════ */
+#tab-stock {
+  background: #f0f3f8;
+  border-radius: 12px;
+  padding: 4px;
+}
+
+/* KPI 카드 */
+#tab-stock .kpi-grid { gap: 14px; margin-bottom: 24px; }
+#tab-stock .kpi-card {
+  background: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 20px 22px;
+  box-shadow: 0 1px 6px rgba(30,50,100,0.08), 0 0 0 1px rgba(30,50,100,0.05);
+  border-left: 4px solid #1976d2;
+  transition: box-shadow 0.2s, transform 0.15s;
+}
+#tab-stock .kpi-card:nth-child(2) { border-left-color: #2e7d52; }
+#tab-stock .kpi-card:nth-child(3) { border-left-color: #9c6b00; }
+#tab-stock .kpi-card:nth-child(4) { border-left-color: #c62828; }
+#tab-stock .kpi-card:nth-child(5) { border-left-color: #6a1b9a; }
+#tab-stock .kpi-card:hover { box-shadow: 0 4px 16px rgba(30,50,100,0.13); transform: translateY(-1px); }
+#tab-stock .kpi-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.8px;
+  text-transform: uppercase; color: #637381; margin-bottom: 10px;
+}
+#tab-stock .kpi-value { font-size: 26px; font-weight: 600; color: #1a2035; }
+#tab-stock .kpi-sub { font-size: 11px; color: #9aa5b4; margin-top: 5px; }
+#tab-stock .kv-green { color: #2e7d52; }
+#tab-stock .kv-orange { color: #9c6b00; }
+#tab-stock .kv-blue { color: #1976d2; }
+
+/* 카드 */
+#tab-stock .card {
+  background: #fff;
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 1px 6px rgba(30,50,100,0.07), 0 0 0 1px rgba(30,50,100,0.05);
+  margin-bottom: 18px;
+}
+
+/* 섹션 헤더 */
+#tab-stock .sec-title { color: #1a2035; font-size: 14px; font-weight: 700; }
+#tab-stock .sec-title::before { background: #1976d2; width: 4px; height: 16px; border-radius: 3px; }
+
+/* 필터 툴바 */
+#tab-stock .sec-hd {
+  background: #fff;
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 6px rgba(30,50,100,0.07), 0 0 0 1px rgba(30,50,100,0.05);
+}
+#tab-stock .sec-actions input[type=text],
+#tab-stock .sec-actions select {
+  border: 1px solid #dde3ef;
+  border-radius: 7px;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: #1a2035;
+  background: #f7f9fc;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+#tab-stock .sec-actions input[type=text]:focus,
+#tab-stock .sec-actions select:focus {
+  border-color: #1976d2;
+  box-shadow: 0 0 0 3px rgba(25,118,210,0.12);
+  background: #fff;
+}
+
+/* 테이블 */
+#tab-stock .table-wrap {
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 1px 6px rgba(30,50,100,0.07), 0 0 0 1px rgba(30,50,100,0.05);
+  overflow: hidden;
+}
+#tab-stock table th {
+  background: #1565c0;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  padding: 11px 14px;
+  border-bottom: none;
+  text-transform: uppercase;
+}
+#tab-stock table td {
+  border-bottom: 1px solid #f0f3f8;
+  color: #1a2035;
+  font-size: 13px;
+  background: #fff;
+}
+#tab-stock table tr:nth-child(even) td { background: #f7f9fc; }
+#tab-stock table tr:hover td { background: #e8f0fe !important; }
+#tab-stock table tr:last-child td { border-bottom: none; }
+#tab-stock .code-cell { color: #7b8fa6; font-size: 11px; }
+#tab-stock .num-cell { color: #1a2035; }
+
+/* 버튼 */
+#tab-stock .btn-dark {
+  background: #1976d2;
+  border-radius: 7px;
+  font-weight: 600;
+}
+#tab-stock .btn-dark:hover { background: #1565c0; }
+#tab-stock .btn-outline {
+  background: #fff;
+  border: 1px solid #1976d2;
+  color: #1976d2;
+  border-radius: 7px;
+  font-weight: 600;
+}
+#tab-stock .btn-outline:hover { background: #e3f0fc; }
+#tab-stock .btn-ghost { border-radius: 7px; }
+
+/* 빈 상태 */
+#tab-stock .empty { background: #fff; border-radius: 0 0 10px 10px; }
 </style>
 </head>
 <body>
