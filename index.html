@@ -634,6 +634,9 @@ select option { background: #fff; }
 #page-issuereq tr.ir-vat-row td { background:#f5f0e8; color:#a08050; }
 #page-issuereq tr.ir-vat-row:hover td { background:#ede8dc; }
 #page-issuereq tr.ir-vat-row .ir-date-cell { color:#c8a060; }
+#page-issuereq tr.ir-vatinc-row td { background:#fff8ec; color:#8a6020; }
+#page-issuereq tr.ir-vatinc-row:hover td { background:#fdf0d8; }
+#page-issuereq tr.ir-vatinc-row .ir-date-cell { color:#c87a2a; }
 #page-issuereq .ir-amount-col { text-align:right; font-weight:600; font-family:'DM Mono',monospace; }
 #page-issuereq .ir-date-cell { color:#c94040; font-size:12px; font-weight:700; }
 #page-issuereq .ir-badge { font-size:12px; padding:2px 7px; border-radius:20px; background:var(--surface2); color:var(--text2); }
@@ -5875,6 +5878,8 @@ function taxExportCSV() {
   var irVendorSort = 'name';
   var irCheckedVendors = new Set();
   var irDeletedVendors = new Set();
+  var IR_VAT_INC_KEY = 'achro_ir_vat_included';
+  var irVatIncluded = (function(){ try { return new Set(JSON.parse(localStorage.getItem(IR_VAT_INC_KEY)||'[]')); } catch(e){ return new Set(); } })();
   var irVendorMap = {};
 
   // 드래그앤드롭
@@ -5953,6 +5958,13 @@ function taxExportCSV() {
 
   window.irClearAllChecked = function() { irCheckedVendors.clear(); irRenderVendorList(); };
 
+  window.irToggleVatIncluded = function(e, name) {
+    e.stopPropagation();
+    if (irVatIncluded.has(name)) irVatIncluded.delete(name); else irVatIncluded.add(name);
+    localStorage.setItem(IR_VAT_INC_KEY, JSON.stringify([...irVatIncluded]));
+    irRenderVendorList();
+  };
+
   window.irDeleteVendor = function(e, name) {
     e.stopPropagation();
     if (!confirm('"'+name+'" 업체를 목록에서 삭제할까요?')) return;
@@ -5975,12 +5987,15 @@ function taxExportCSV() {
       var isActive=irActiveVendor===name, isChecked=irCheckedVendors.has(name);
       var nameColor=isChecked?'#E24B4A':(isActive?'#1a73e8':'var(--text)');
       var esc=name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      var isVatInc = irVatIncluded.has(name);
       var memos=[...new Set(irDATA.filter(function(d){return d.recipient===name&&d.memo&&d.memo.trim()&&!d.memo.includes('세액');}).map(function(d){return d.memo.trim();}))];
       var memoBadges=memos.map(function(m){return '<span class="ir-badge" style="font-size:10px;padding:1px 5px;">'+m+'</span>';}).join('');
+      var vatBadge='<button onclick="irToggleVatIncluded(event,\''+esc+'\')" title="부가세 포함 매장 표시 토글" style="flex-shrink:0;font-size:10px;padding:1px 6px;border-radius:20px;border:1px solid '+(isVatInc?'#c87a2a':'var(--border2)')+';background:'+(isVatInc?'#fff3e0':'transparent')+';color:'+(isVatInc?'#c87a2a':'var(--text3)')+';cursor:pointer;font-family:inherit;font-weight:'+(isVatInc?'700':'400')+';">부가세포함</button>';
       return '<div class="ir-vendor-item'+(isActive?' active':'')+(isChecked?' ir-checked':'')+'" data-vname="'+esc+'" onclick="irSelectVendor(\''+esc+'\')">'
         +'<input type="checkbox" class="ir-vcb"'+(isChecked?' checked':'')+' onclick="irToggleVendorCheck(event,\''+esc+'\')">'
         +'<span class="ir-vname" style="color:'+nameColor+';">'+name+'</span>'
         +memoBadges
+        +vatBadge
         +'<span class="ir-vcount">'+info.count+'</span>'
         +'<button class="ir-del-btn" onclick="irDeleteVendor(event,\''+esc+'\')" title="삭제">✕</button>'
         +'</div>';
@@ -6194,7 +6209,9 @@ function taxExportCSV() {
     tbody.innerHTML=rows.map(function(r){
       var checked=irSelectedIds.has(r._id);
       var isVat = (r.memo||'').includes('세액');
-      return '<tr data-id="'+r._id+'" class="'+(checked?'ir-sel-row':isVat?'ir-vat-row':'')+'" onclick="irRowClick(event,'+r._id+')">'
+      var isVatInc = irVatIncluded.has(r.recipient);
+      var rowClass = checked?'ir-sel-row':isVat?'ir-vat-row':isVatInc?'ir-vatinc-row':'';
+      return '<tr data-id="'+r._id+'" class="'+rowClass+'" onclick="irRowClick(event,'+r._id+')">'
         +'<td style="padding:7px 4px 7px 12px;"><input type="checkbox" class="ir-row-check" data-id="'+r._id+'" '+(checked?'checked':'')+' onclick="event.stopPropagation();irToggleRow('+r._id+',this.checked)"></td>'
         +'<td class="ir-date-cell">'+r.date+'</td>'
         +'<td>'+r.recipient+(r.memo?' <span class="ir-badge">'+r.memo+'</span>':'')+'</td>'
