@@ -632,7 +632,7 @@ select option { background: #fff; }
 #page-issuereq tr:hover td { background:var(--surface2); }
 #page-issuereq tr.ir-sel-row:hover td { background:#dce8fd; }
 #page-issuereq .ir-amount-col { text-align:right; font-weight:600; font-family:'DM Mono',monospace; }
-#page-issuereq .ir-date-cell { color:var(--text2); font-size:12px; }
+#page-issuereq .ir-date-cell { color:#c94040; font-size:12px; font-weight:700; }
 #page-issuereq .ir-badge { font-size:12px; padding:2px 7px; border-radius:20px; background:var(--surface2); color:var(--text2); }
 #page-issuereq .ir-vendor-item { padding:6px 8px; border-radius:8px; cursor:pointer; font-size:14px; color:var(--text); display:flex; align-items:center; gap:6px; border:1px solid transparent; }
 #page-issuereq .ir-vendor-item:hover { background:var(--surface2); }
@@ -6017,7 +6017,10 @@ function taxExportCSV() {
         });
         if (firstVendor) {
           var item = document.querySelector('#ir-vendorList [data-vname="'+firstVendor.replace(/\\/g,'\\\\').replace(/"/g,'&quot;')+'"]');
-          if (item) item.scrollIntoView({behavior:'smooth', block:'nearest'});
+          if (item) {
+            var container = document.getElementById('ir-vendorList');
+            container.scrollTo({top: item.offsetTop - container.offsetTop, behavior:'smooth'});
+          }
         }
       };
       qBtns.appendChild(b);
