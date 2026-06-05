@@ -2327,6 +2327,7 @@ function renderVendorLedger(searchQ) {
             + label
             + (opt ? '<span style="color:var(--text3);margin-left:6px;font-size:11px;">'+opt+'</span>' : '')
             + '<span style="color:var(--text);font-weight:600;margin-left:6px;">×'+it.qty+'</span>'
+            + (it.amount ? '<span style="color:var(--accent2);font-weight:600;margin-left:8px;font-size:11px;font-family:\'DM Mono\',monospace;">₩'+fmt(it.amount)+'</span>' : '')
             + '</div>';
         });
         if (!dayItems.length && minList.length) html += '<div style="font-size:11px;color:var(--text3);">반품/조정만</div>';
