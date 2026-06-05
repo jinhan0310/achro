@@ -168,7 +168,17 @@ async function fbLoadAll() {
           if (refresh) try { refresh(); } catch(e) {}
         }
       };
-      _set('achro_tx4',        dd.txData,    function(){ if(typeof renderVendorLedger==='function') renderVendorLedger(); if(typeof renderLedger==='function') renderLedger(); });
+      // achro_tx4는 로컬이 더 최신이면 Firebase가 덮어쓰지 않음 (새로고침 시 데이터 유실 방지)
+      var fbTxTime  = dd.txUpdatedAt || dd.uploadedAt || null;
+      var localTime = localStorage.getItem(SK + '_saved_at');
+      var skipTx = fbTxTime && localTime && localTime > fbTxTime;
+      if (!skipTx) {
+        _set('achro_tx4', dd.txData, function(){ if(typeof renderVendorLedger==='function') renderVendorLedger(); if(typeof renderLedger==='function') renderLedger(); });
+      } else {
+        // 로컬이 더 최신 → Firebase에 즉시 업로드해서 동기화
+        if (typeof fbSaveTx === 'function') fbSaveTx(loadTx());
+        try { if(typeof renderVendorLedger==='function') renderVendorLedger(); if(typeof renderLedger==='function') renderLedger(); } catch(e) {}
+      }
       _set('achro_price4',     dd.priceData);
       _set('achro_adj2',       dd.adjData);
       _set('achro_minus_v1',   dd.minusData, function(){ if(typeof renderVendorLedger==='function') renderVendorLedger(); });
@@ -233,16 +243,21 @@ async function fbUploadAll() {
 }
 
 // ── 정산 데이터 저장 (debounce 500ms) ──
+// patch를 누적해서 한 번에 저장 — 타이머 재설정 시 이전 patch가 사라지는 버그 방지
 var _fbSaveTimer = null;
+var _fbSavePatch = {};
 function fbSaveData(patch) {
   if (!_fbUser) return;
+  Object.assign(_fbSavePatch, patch);
   clearTimeout(_fbSaveTimer);
   _fbSaveTimer = setTimeout(async function() {
-    try { await _db.collection('achro').doc(_fbUser.uid + '_data').set(patch, {merge:true}); }
+    var toSave = _fbSavePatch;
+    _fbSavePatch = {};
+    try { await _db.collection('achro').doc(_fbUser.uid + '_data').set(toSave, {merge:true}); }
     catch(e) { console.error('FB save error', e); }
   }, 500);
 }
-function fbSaveTx(d)       { fbSaveData({txData: d}); }
+function fbSaveTx(d)       { fbSaveData({txData: d, txUpdatedAt: new Date().toISOString()}); }
 function fbSavePrices(d)   { fbSaveData({priceData: d}); }
 function fbSaveAdj(d)      { fbSaveData({adjData: d}); }
 function fbSaveMinus(d)    { fbSaveData({minusData: d}); }
@@ -1129,6 +1144,7 @@ var LS_KEY  = 'achro_settle5';
 function loadTx()     { try { return JSON.parse(localStorage.getItem(SK)||'[]'); }  catch(e){ return []; } }
 function saveTx(d) {
   localStorage.setItem(SK, JSON.stringify(d));
+  localStorage.setItem(SK + '_saved_at', new Date().toISOString());
   ['achro_tx3','achro_tx2','achro_tx_v2'].forEach(function(k){ localStorage.removeItem(k); });
   fbSaveTx(d);
 }
@@ -5922,11 +5938,8 @@ function taxExportCSV() {
     irRenderVendorList();
   };
 
-  window.irToggleVendorCheck = function(e, name) {
-    e.stopPropagation();
-    if (irCheckedVendors.has(name)) irCheckedVendors.delete(name); else irCheckedVendors.add(name);
-    irRenderVendorList();
-  };
+  // 체크박스는 오른쪽 행 선택으로만 제어 — 직접 클릭 비활성화
+  window.irToggleVendorCheck = function(e, name) { e.stopPropagation(); e.preventDefault(); };
 
   window.irClearAllChecked = function() { irCheckedVendors.clear(); irRenderVendorList(); };
 
@@ -6029,10 +6042,20 @@ function taxExportCSV() {
     irRenderVendorList(); irFilterData();
   };
 
+  // 모든 거래처를 irSelectedIds 기준으로 체크/해제 재동기화
+  function irSyncAllVendorChecks() {
+    irCheckedVendors.clear();
+    irDATA.forEach(function(d, i) {
+      if (irSelectedIds.has(i) && d.recipient) irCheckedVendors.add(d.recipient);
+    });
+    irRenderVendorList();
+  }
+
   window.irToggleRow = function(id, checked) {
     if (checked) irSelectedIds.add(id); else irSelectedIds.delete(id);
     var tr=document.querySelector('#page-issuereq tr[data-id="'+id+'"]');
     if (tr) tr.classList.toggle('ir-sel-row',checked);
+    irSyncAllVendorChecks();
     irUpdateSelBar();
   };
 
@@ -6040,6 +6063,7 @@ function taxExportCSV() {
     irCurrentFiltered.forEach(function(d){ if(checked) irSelectedIds.add(d._id); else irSelectedIds.delete(d._id); });
     document.querySelectorAll('#page-issuereq .ir-row-check').forEach(function(cb){ cb.checked=checked; });
     document.querySelectorAll('#page-issuereq tr[data-id]').forEach(function(tr){ tr.classList.toggle('ir-sel-row',checked); });
+    irSyncAllVendorChecks();
     irUpdateSelBar();
   };
 
@@ -6048,6 +6072,7 @@ function taxExportCSV() {
     document.querySelectorAll('#page-issuereq .ir-row-check').forEach(function(cb){ cb.checked=false; });
     document.querySelectorAll('#page-issuereq tr[data-id]').forEach(function(tr){ tr.classList.remove('ir-sel-row'); });
     document.getElementById('ir-checkAll').checked=false;
+    irSyncAllVendorChecks();
     irUpdateSelBar();
   };
 
