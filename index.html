@@ -6017,6 +6017,7 @@ function taxExportCSV() {
         document.getElementById('ir-memoInput').value=m;
         document.getElementById('ir-recipientInput').value='';
         irActiveVendor=null;
+        irMemoExact=true;
         irRenderVendorList(); irFilterData();
         // 해당 메모의 첫 번째 업체로 왼쪽 목록 스크롤
         var firstVendor = Object.keys(irVendorMap).find(function(v){
@@ -6034,20 +6035,23 @@ function taxExportCSV() {
     });
   }
 
-  window.irOnSearchInput = function() { irActiveVendor=null; irRenderVendorList(); irFilterData(); };
+  window.irOnSearchInput = function() { irActiveVendor=null; irMemoExact=false; irRenderVendorList(); irFilterData(); };
+
+  var irMemoExact = false; // \ube60\ub978\uc120\ud0dd \ud074\ub9ad \uc2dc true(\uc815\ud655\uc77c\uce58), \uc218\ub3d9\uc785\ub825 \uc2dc false(\ubd80\ubd84\uc77c\uce58)
 
   function irFilterData() {
     var rq=document.getElementById('ir-recipientInput').value.trim().toLowerCase();
     var mq=document.getElementById('ir-memoInput').value.trim().toLowerCase();
     irCurrentFiltered = irDATA.map(function(d,i){ return Object.assign({},d,{_id:i}); }).filter(function(d){
       var cleanMemo = (d.memo||'').replace(/\u3000/g,'').toLowerCase();
-      return !irDeletedVendors.has(d.recipient)&&(!rq||d.recipient.toLowerCase().includes(rq))&&(!mq||cleanMemo.includes(mq));
+      var memoMatch = !mq || (irMemoExact ? cleanMemo === mq : cleanMemo.includes(mq));
+      return !irDeletedVendors.has(d.recipient)&&(!rq||d.recipient.toLowerCase().includes(rq))&&memoMatch;
     });
     irRenderTable(irCurrentFiltered);
   }
 
   window.irClearFilter = function() {
-    irActiveVendor=null;
+    irActiveVendor=null; irMemoExact=false;
     document.getElementById('ir-recipientInput').value='';
     document.getElementById('ir-memoInput').value='';
     irRenderVendorList(); irFilterData();
