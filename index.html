@@ -5965,9 +5965,12 @@ function taxExportCSV() {
       var isActive=irActiveVendor===name, isChecked=irCheckedVendors.has(name);
       var nameColor=isChecked?'#E24B4A':(isActive?'#1a73e8':'var(--text)');
       var esc=name.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      var memos=[...new Set(irDATA.filter(function(d){return d.recipient===name&&d.memo&&d.memo.trim();}).map(function(d){return d.memo.trim();}))];
+      var memoBadges=memos.map(function(m){return '<span class="ir-badge" style="font-size:10px;padding:1px 5px;">'+m+'</span>';}).join('');
       return '<div class="ir-vendor-item'+(isActive?' active':'')+(isChecked?' ir-checked':'')+'" onclick="irSelectVendor(\''+esc+'\')">'
         +'<input type="checkbox" class="ir-vcb"'+(isChecked?' checked':'')+' onclick="irToggleVendorCheck(event,\''+esc+'\')">'
         +'<span class="ir-vname" style="color:'+nameColor+';">'+name+'</span>'
+        +memoBadges
         +'<span class="ir-vcount">'+info.count+'</span>'
         +'<button class="ir-del-btn" onclick="irDeleteVendor(event,\''+esc+'\')" title="삭제">✕</button>'
         +'</div>';
