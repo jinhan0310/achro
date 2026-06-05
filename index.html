@@ -6017,7 +6017,10 @@ function taxExportCSV() {
         document.getElementById('ir-memoInput').value=m;
         document.getElementById('ir-recipientInput').value='';
         irActiveVendor=null;
-        irMemoExact=true;
+        // 해당 메모의 받는분을 Set으로 저장 → 동일 받는분의 다른 메모 거래도 함께 표시
+        irQuickRecipients = new Set(
+          irDATA.filter(function(d){ return (d.memo||'').replace(/　/g,'')===m; }).map(function(d){ return d.recipient; })
+        );
         irRenderVendorList(); irFilterData();
         // 해당 메모의 첫 번째 업체로 왼쪽 목록 스크롤
         var firstVendor = Object.keys(irVendorMap).find(function(v){
@@ -6035,23 +6038,25 @@ function taxExportCSV() {
     });
   }
 
-  window.irOnSearchInput = function() { irActiveVendor=null; irMemoExact=false; irRenderVendorList(); irFilterData(); };
+  window.irOnSearchInput = function() { irActiveVendor=null; irQuickRecipients=null; irRenderVendorList(); irFilterData(); };
 
-  var irMemoExact = false; // \ube60\ub978\uc120\ud0dd \ud074\ub9ad \uc2dc true(\uc815\ud655\uc77c\uce58), \uc218\ub3d9\uc785\ub825 \uc2dc false(\ubd80\ubd84\uc77c\uce58)
+  // \ube60\ub978\uc120\ud0dd \ud074\ub9ad \uc2dc \ud574\ub2f9 \uba54\ubaa8\uc758 \ubc1b\ub294\ubd84 \uc804\uccb4\ub97c \uc800\uc7a5 \u2192 \ub2e4\ub978 \uba54\ubaa8\uc758 \uac19\uc740 \ubc1b\ub294\ubd84\ub3c4 \ud568\uaed8 \ud45c\uc2dc
+  var irQuickRecipients = null; // null=\uc218\ub3d9\uac80\uc0c9, Set=\ube60\ub978\uc120\ud0dd
 
   function irFilterData() {
     var rq=document.getElementById('ir-recipientInput').value.trim().toLowerCase();
     var mq=document.getElementById('ir-memoInput').value.trim().toLowerCase();
     irCurrentFiltered = irDATA.map(function(d,i){ return Object.assign({},d,{_id:i}); }).filter(function(d){
+      if (irDeletedVendors.has(d.recipient)) return false;
+      if (irQuickRecipients) return irQuickRecipients.has(d.recipient); // \ube60\ub978\uc120\ud0dd: \ubc1b\ub294\ubd84 \uae30\uc900
       var cleanMemo = (d.memo||'').replace(/\u3000/g,'').toLowerCase();
-      var memoMatch = !mq || (irMemoExact ? cleanMemo === mq : cleanMemo.includes(mq));
-      return !irDeletedVendors.has(d.recipient)&&(!rq||d.recipient.toLowerCase().includes(rq))&&memoMatch;
+      return (!rq||d.recipient.toLowerCase().includes(rq))&&(!mq||cleanMemo.includes(mq));
     });
     irRenderTable(irCurrentFiltered);
   }
 
   window.irClearFilter = function() {
-    irActiveVendor=null; irMemoExact=false;
+    irActiveVendor=null; irQuickRecipients=null;
     document.getElementById('ir-recipientInput').value='';
     document.getElementById('ir-memoInput').value='';
     irRenderVendorList(); irFilterData();
