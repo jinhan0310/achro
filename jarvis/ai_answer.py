@@ -44,6 +44,9 @@ def answer_imweb(question: str, db) -> str:
             f"실제 ROAS: {latest['imweb_roas']}x"
         )
 
+    days = len(stats)
+    period_label = f"{stats[0]['date']} 하루" if days == 1 else f"{stats[-1]['date']} ~ {stats[0]['date']} ({days}일간)"
+
     rows = "\n".join(
         f"{s['date']}: 주문 {s['imweb_order_count']}건 / 매출 {s['imweb_revenue']:,}원 / 객단가 {s['imweb_aov']:,.0f}원"
         for s in stats
@@ -53,8 +56,11 @@ def answer_imweb(question: str, db) -> str:
         return "수집된 아임웹 주문 데이터가 없습니다."
 
     return _ask(
-        f"아크로 쇼핑몰 아임웹 주문/매출 데이터:\n{rows}\n\n"
-        f"질문: {question}\n\n카카오톡용으로 50단어 이내, 핵심만 답변."
+        f"아크로 쇼핑몰 아임웹 주문/매출 데이터 ({period_label}):\n{rows}\n\n"
+        f"질문: {question}\n\n"
+        f"중요: 데이터가 {days}일치만 있으므로 '{period_label}' 기준으로만 답변하세요. "
+        f"'7일' 같은 기간 표현은 절대 쓰지 마세요.\n"
+        f"카카오톡용으로 50단어 이내, 핵심만 답변."
     )
 
 
@@ -74,14 +80,21 @@ def answer_meta(question: str, db) -> str:
             f"📊 {latest['date']} 광고 ROAS\n"
             f"━━━━━━━━━━━━\n"
             f"ROAS: {latest['meta_roas']}x ({status})\n"
-            f"광고비: {latest['spend']:,}원\n"
-            f"전환: {latest['meta_purchases']:.0f}건\n"
-            f"CPA: {latest['meta_cpa']:,.0f}원"
+            f"광고비: {int(latest['spend']):,}원\n"
+            f"전환: {int(latest['meta_purchases']):,}건\n"
+            f"CPA: {int(latest['meta_cpa']):,}원"
         )
 
+    # 실제 보유 날짜 수로 레이블 결정
+    days = len(stats)
+    if days == 1:
+        period_label = f"{stats[0]['date']} 하루"
+    else:
+        period_label = f"{stats[-1]['date']} ~ {stats[0]['date']} ({days}일간)"
+
     stats_text = "\n".join(
-        f"{s['date']}: 광고비 {s['spend']:,}원 / ROAS {s['meta_roas']}x / "
-        f"전환 {s['meta_purchases']:.0f}건 / CPA {s['meta_cpa']:,.0f}원"
+        f"{s['date']}: 광고비 {int(s['spend']):,}원 / ROAS {s['meta_roas']}x / "
+        f"전환 {int(s['meta_purchases']):,}건 / CPA {int(s['meta_cpa']):,}원"
         for s in stats
     )
     camp_text = "\n".join(
@@ -90,9 +103,12 @@ def answer_meta(question: str, db) -> str:
     ) if campaigns else "캠페인 데이터 없음"
 
     return _ask(
-        f"아크로 메타광고 데이터:\n[최근 7일]\n{stats_text}\n\n"
+        f"아크로 메타광고 데이터 ({period_label}):\n{stats_text}\n\n"
         f"[캠페인별]\n{camp_text}\n\n"
-        f"질문: {question}\n\n카카오톡용으로 60단어 이내, 핵심만 답변."
+        f"질문: {question}\n\n"
+        f"중요: 데이터가 {days}일치만 있으므로 '{period_label}' 기준으로만 답변하세요. "
+        f"'7일', '최근 7일' 같은 표현은 절대 쓰지 마세요.\n"
+        f"카카오톡용으로 60단어 이내, 핵심만 답변."
     )
 
 
@@ -149,17 +165,68 @@ def answer_briefing(question: str, db) -> str:
 
     lines += [
         "[메타광고]",
-        f"광고비 {s['spend']:,}원 / ROAS {s['meta_roas']}x ({roas_status})",
-        f"전환 {s['meta_purchases']:.0f}건 / CPA {s['meta_cpa']:,.0f}원",
+        f"광고비 {int(s['spend']):,}원 / ROAS {s['meta_roas']}x ({roas_status})",
+        f"전환 {int(s['meta_purchases']):,}건 / CPA {int(s['meta_cpa']):,}원",
     ]
 
     if analysis and analysis.get("overall_assessment"):
-        summary = analysis["overall_assessment"]
-        if len(summary) > 120:
-            summary = summary[:117] + "..."
-        lines += ["", "[AI 총평]", summary]
+        lines += ["", "[AI 총평]", analysis["overall_assessment"]]
 
     return "\n".join(lines)
+
+
+def answer_products(question: str, db) -> str:
+    if not db.has_product_sales_data():
+        return "아직 상품 판매 데이터가 없습니다.\nanalyze_sales.py를 먼저 실행해주세요."
+
+    # 질문에서 연도/시즌 파싱
+    import re
+    year  = None
+    season = None
+    year_m = re.search(r"(20\d{2})년?", question)
+    if year_m:
+        year = int(year_m.group(1))
+    for kw, s in [("봄","봄"),("여름","여름"),("가을","가을"),("겨울","겨울"),
+                  ("spring","summer"),("summer","summer"),("fall","가을"),("winter","겨울")]:
+        if kw in question:
+            season = s
+            break
+
+    top = db.get_top_products(limit=10, year=year, season=season)
+    years = db.get_product_years()
+
+    if not top:
+        return "해당 조건의 판매 데이터가 없습니다."
+
+    label = ""
+    if year and season:
+        label = f"{year}년 {season} "
+    elif year:
+        label = f"{year}년 "
+    elif season:
+        label = f"{season} "
+
+    lines = [
+        f"🏆 아크로 {label}인기 상품 TOP {len(top)}",
+        f"(데이터: {min(years)}~{max(years)}년)",
+        "━━━━━━━━━━━━━━",
+    ]
+    for i, p in enumerate(top, 1):
+        name = p["product"]
+        # 상품명 줄이기: 60자 초과 시 자름
+        short = name[:55] + "..." if len(name) > 55 else name
+        lines.append(f"{i}. {short}")
+        lines.append(f"   {p['total_qty']:,}개 판매 / {int(p['total_revenue']):,}원")
+
+    return "\n".join(lines)
+
+
+def answer_stock(question: str, db) -> str:
+    return (
+        "🗂 재고 현황은 아크로 시스템 상단 [재고현황] 탭에서 확인하세요.\n\n"
+        "자비스는 매출·광고·경쟁사·브리핑 데이터를 답변합니다.\n"
+        "예) '어제 매출', '광고 ROAS', '오늘 브리핑'"
+    )
 
 
 def answer_free(question: str, db) -> str:
@@ -170,7 +237,7 @@ def answer_free(question: str, db) -> str:
         s = stats[0]
         context = (
             f"\n[최근 아크로 데이터 - {s['date']}]\n"
-            f"광고비: {s['spend']:,}원 / ROAS: {s['meta_roas']}x\n"
+            f"광고비: {int(s['spend']):,}원 / ROAS: {s['meta_roas']}x\n"
             f"실제 주문: {s['imweb_order_count']:,}건 / 매출: {s['imweb_revenue']:,}원\n"
         )
 
@@ -186,8 +253,10 @@ def answer_free(question: str, db) -> str:
 def get_answer(question: str, question_type: str, db) -> str:
     try:
         dispatch = {
-            "imweb": answer_imweb,
-            "meta": answer_meta,
+            "stock":    answer_stock,
+            "products": answer_products,
+            "imweb":    answer_imweb,
+            "meta":     answer_meta,
             "competitor": answer_competitor,
             "briefing": answer_briefing,
         }
