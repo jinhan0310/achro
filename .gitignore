@@ -1,0 +1,10 @@
+.env
+*.db
+briefing_log.txt
+reports/
+__pycache__/
+jarvis/__pycache__/
+.playwright-mcp/
+index_backup_*.html
+.mcp.json
+.claude/

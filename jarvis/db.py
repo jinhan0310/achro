@@ -248,6 +248,80 @@ def get_competitor_data(date=None):
         return {"date": date, "best_sellers": best, "new_products": new, "analysis": ana}
 
 
+def get_top_products(limit=20, year=None, season=None):
+    """상품별 누적 판매 순위 조회
+    season: 'spring'(3-5월) | 'summer'(6-8월) | 'fall'(9-11월) | 'winter'(12-2월)
+    """
+    season_months = {
+        "spring": (3, 4, 5), "summer": (6, 7, 8),
+        "fall":   (9, 10, 11), "winter": (12, 1, 2),
+        "봄": (3, 4, 5), "여름": (6, 7, 8),
+        "가을": (9, 10, 11), "겨울": (12, 1, 2),
+    }
+    with get_conn() as conn:
+        where, params = [], []
+        if year:
+            where.append("year = ?")
+            params.append(year)
+        if season and season in season_months:
+            placeholders = ",".join("?" * len(season_months[season]))
+            where.append(f"month IN ({placeholders})")
+            params.extend(season_months[season])
+        where_sql = ("WHERE " + " AND ".join(where)) if where else ""
+        rows = conn.execute(f"""
+            SELECT product,
+                   SUM(qty)   AS total_qty,
+                   COUNT(DISTINCT order_no) AS order_count,
+                   SUM(qty * price) AS total_revenue,
+                   MIN(order_date) AS first_sale,
+                   MAX(order_date) AS last_sale
+            FROM product_sales
+            {where_sql}
+            GROUP BY product
+            ORDER BY total_qty DESC
+            LIMIT ?
+        """, params + [limit]).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_product_years():
+    """판매 데이터 보유 연도 목록"""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT year FROM product_sales WHERE year IS NOT NULL ORDER BY year"
+        ).fetchall()
+        return [r[0] for r in rows]
+
+
+def get_product_monthly_trend(product_keyword=None):
+    """월별 판매 트렌드 (특정 상품 또는 전체)"""
+    with get_conn() as conn:
+        if product_keyword:
+            rows = conn.execute("""
+                SELECT yearmonth, SUM(qty) AS qty, COUNT(DISTINCT order_no) AS orders
+                FROM product_sales
+                WHERE product LIKE ?
+                GROUP BY yearmonth ORDER BY yearmonth
+            """, (f"%{product_keyword}%",)).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT yearmonth, SUM(qty) AS qty, COUNT(DISTINCT order_no) AS orders
+                FROM product_sales
+                GROUP BY yearmonth ORDER BY yearmonth
+            """).fetchall()
+        return [dict(r) for r in rows]
+
+
+def has_product_sales_data():
+    """product_sales 테이블에 데이터 존재 여부"""
+    with get_conn() as conn:
+        try:
+            row = conn.execute("SELECT COUNT(*) FROM product_sales").fetchone()
+            return row[0] > 0
+        except Exception:
+            return False
+
+
 def get_briefing_analysis(date=None):
     with get_conn() as conn:
         if not date:
