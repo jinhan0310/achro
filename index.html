@@ -684,6 +684,40 @@ select option { background: #fff; }
   box-shadow: 0 1px 6px rgba(30,50,100,0.07), 0 0 0 1px rgba(30,50,100,0.05);
 }
 
+/* ── 자비스 채팅 탭 ── */
+#page-jarvis { display:none; padding:0; height:calc(100vh - 56px); overflow:hidden; }
+#page-jarvis.active { display:flex; flex-direction:column; }
+#jarvis-wrap { display:flex; flex-direction:column; height:100%; max-width:820px; margin:0 auto; width:100%; padding:0 20px 16px; }
+#jarvis-head { display:flex; align-items:center; justify-content:space-between; padding:18px 2px 10px; }
+#jarvis-head-title { font-size:17px; font-weight:700; color:var(--accent); display:flex; align-items:center; gap:8px; }
+#jarvis-status { font-size:11px; padding:3px 10px; border-radius:20px; background:#e8f5e9; color:#2e7d32; font-weight:600; letter-spacing:0.3px; }
+#jarvis-status.offline { background:#fce4ec; color:#c62828; }
+#jarvis-quick { display:flex; gap:8px; flex-wrap:wrap; padding-bottom:12px; border-bottom:1px solid var(--border); margin-bottom:0; }
+.j-quick-btn { padding:6px 15px; border-radius:20px; border:1px solid var(--accent); color:var(--accent); background:#fff; font-size:13px; cursor:pointer; transition:all 0.15s; font-family:inherit; font-weight:500; }
+.j-quick-btn:hover { background:var(--accent); color:#fff; }
+#jarvis-msgs { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:14px; padding:16px 8px; background:var(--surface2); border-radius:12px; margin:12px 0; min-height:0; }
+.j-row { display:flex; align-items:flex-end; gap:9px; }
+.j-row.user { flex-direction:row-reverse; }
+.j-avatar { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; }
+.j-row.bot .j-avatar { background:var(--accent); color:#fff; font-size:13px; font-weight:700; }
+.j-row.user .j-avatar { background:#dce8fb; font-size:13px; font-weight:700; color:var(--accent); }
+.j-col { display:flex; flex-direction:column; gap:4px; max-width:70%; }
+.j-row.user .j-col { align-items:flex-end; }
+.j-bubble { padding:10px 15px; border-radius:18px; font-size:14px; line-height:1.7; white-space:pre-wrap; word-break:break-word; }
+.j-row.bot .j-bubble { background:#fff; border:1px solid var(--border2); border-bottom-left-radius:5px; color:var(--text); box-shadow:0 1px 4px rgba(0,0,0,0.06); }
+.j-row.user .j-bubble { background:var(--accent); color:#fff; border-bottom-right-radius:5px; }
+.j-time { font-size:11px; color:var(--muted); padding:0 5px; }
+.j-typing span { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--muted); margin:0 2px; animation:jdot 1.2s infinite; }
+.j-typing span:nth-child(2){ animation-delay:0.2s; }
+.j-typing span:nth-child(3){ animation-delay:0.4s; }
+@keyframes jdot { 0%,60%,100%{opacity:0.2;transform:translateY(0)} 30%{opacity:1;transform:translateY(-4px)} }
+#jarvis-input-row { display:flex; gap:8px; }
+#jarvis-input { flex:1; padding:12px 18px; border:1px solid var(--border2); border-radius:26px; font-size:14px; font-family:inherit; outline:none; background:var(--surface); color:var(--text); transition:border-color 0.15s, box-shadow 0.15s; }
+#jarvis-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(21,101,192,0.12); }
+#jarvis-send { padding:12px 24px; background:var(--accent); color:#fff; border:none; border-radius:26px; font-size:14px; font-weight:600; cursor:pointer; font-family:inherit; transition:background 0.15s; }
+#jarvis-send:hover { background:var(--accent2); }
+#jarvis-send:disabled { background:#90caf9; cursor:not-allowed; }
+
 </style>
 </head>
 <body>
@@ -729,8 +763,38 @@ select option { background: #fff; }
   <button class="nav-btn" onclick="goPage('inreg',this)">입고등록</button>
   <button class="nav-btn" id="nav-btn-sale" onclick="goPageSettle(this,'sale')">판매등록</button>
   <button class="nav-btn" id="nav-btn-stock" onclick="goPageSettle(this,'stock')">재고현황</button>
+  <button class="nav-btn" onclick="goPage('jarvis',this)">🤖 자비스</button>
   <div id="fb-user-bar" style="display:none;align-items:center;gap:8px;margin-left:auto;padding:0 8px;"></div>
 </nav>
+
+<!-- ── 자비스 AI 채팅 ── -->
+<div class="page" id="page-jarvis">
+  <div id="jarvis-wrap">
+    <div id="jarvis-head">
+      <div id="jarvis-head-title">🤖 자비스 AI 어시스턴트</div>
+      <span id="jarvis-status">● 확인 중...</span>
+    </div>
+    <div id="jarvis-quick">
+      <button class="j-quick-btn" onclick="jSend('매출 알려줘')">📦 매출 알려줘</button>
+      <button class="j-quick-btn" onclick="jSend('광고 성과')">📊 광고 성과</button>
+      <button class="j-quick-btn" onclick="jSend('오늘 브리핑')">📋 오늘 브리핑</button>
+      <button class="j-quick-btn" onclick="jSend('재고 현황')">🗂 재고 현황</button>
+    </div>
+    <div id="jarvis-msgs">
+      <div class="j-row bot">
+        <div class="j-avatar">🤖</div>
+        <div class="j-col">
+          <div class="j-bubble">안녕하세요! 아크로 자비스입니다. 😊<br>매출·광고·경쟁사 분석 등 무엇이든 질문해 보세요.</div>
+          <div class="j-time">지금</div>
+        </div>
+      </div>
+    </div>
+    <div id="jarvis-input-row">
+      <input type="text" id="jarvis-input" placeholder="질문을 입력하세요..." onkeydown="if(event.key==='Enter'&&!event.isComposing)jSendInput()">
+      <button id="jarvis-send" onclick="jSendInput()">전송</button>
+    </div>
+  </div>
+</div>
 
 <div class="page" id="page-inreg">
   <div id="alert-in" class="alert"></div>
@@ -4057,6 +4121,10 @@ function goPage(name, el) {
     if(!_settleInited){ _settleInited=true; if(typeof initIn==='function') initIn(); }
     if(typeof fillSeasons==='function') fillSeasons();
     if(typeof renderStock==='function') renderStock();
+  }
+  if(name === 'jarvis') {
+    jCheckStatus();
+    setTimeout(function(){ var i=document.getElementById('jarvis-input'); if(i) i.focus(); }, 100);
   }
   refreshAll();
 }
@@ -8771,6 +8839,107 @@ function settleSwitchTab(tab) {
     pays.forEach(function(p){ var f=fixVendor(p.vendor||''); if(f!==p.vendor){p.vendor=f;changed3=true;} });
     if(changed3){ localStorage.setItem(PAY_KEY, JSON.stringify(pays)); console.log('✅ 거래처명 정규화(pay)'); }
   } catch(e){}
+})();
+</script>
+
+<!-- ── 자비스 채팅 JS ── -->
+<script>
+(function() {
+  var JARVIS_URL = 'http://localhost:5000/chat';
+
+  function jNow() {
+    var d = new Date();
+    return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+  }
+
+  function jEsc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function jAppend(text, role) {
+    var msgs = document.getElementById('jarvis-msgs');
+    if (!msgs) return;
+    var row = document.createElement('div');
+    row.className = 'j-row ' + role;
+    var av = role === 'bot' ? '🤖' : '나';
+    row.innerHTML =
+      '<div class="j-avatar">' + av + '</div>' +
+      '<div class="j-col">' +
+        '<div class="j-bubble">' + jEsc(text).replace(/\n/g,'<br>') + '</div>' +
+        '<div class="j-time">' + jNow() + '</div>' +
+      '</div>';
+    msgs.appendChild(row);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function jShowTyping() {
+    var msgs = document.getElementById('jarvis-msgs');
+    if (!msgs || document.getElementById('j-typing')) return;
+    var row = document.createElement('div');
+    row.className = 'j-row bot';
+    row.id = 'j-typing';
+    row.innerHTML =
+      '<div class="j-avatar">🤖</div>' +
+      '<div class="j-col"><div class="j-bubble j-typing">' +
+        '<span></span><span></span><span></span>' +
+      '</div></div>';
+    msgs.appendChild(row);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function jHideTyping() {
+    var t = document.getElementById('j-typing');
+    if (t) t.remove();
+  }
+
+  window.jSend = async function(text) {
+    text = text.trim();
+    if (!text) return;
+    jAppend(text, 'user');
+    var btn = document.getElementById('jarvis-send');
+    var inp = document.getElementById('jarvis-input');
+    if (btn) btn.disabled = true;
+    jShowTyping();
+    try {
+      var resp = await fetch(JARVIS_URL, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: text}),
+        signal: AbortSignal.timeout(30000)
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      var data = await resp.json();
+      jHideTyping();
+      jAppend(data.answer || '응답을 받지 못했습니다.', 'bot');
+    } catch(e) {
+      jHideTyping();
+      jAppend('자비스 서버에 연결할 수 없습니다.\n\npython jarvis/jarvis.py 를 실행했는지 확인해 주세요.', 'bot');
+      var st = document.getElementById('jarvis-status');
+      if (st) { st.textContent = '● 오프라인'; st.className = 'offline'; }
+    }
+    if (btn) btn.disabled = false;
+    if (inp) inp.focus();
+  };
+
+  window.jSendInput = function() {
+    var inp = document.getElementById('jarvis-input');
+    var text = inp ? inp.value.trim() : '';
+    if (!text) return;
+    inp.value = '';
+    window.jSend(text);
+  };
+
+  window.jCheckStatus = async function() {
+    var st = document.getElementById('jarvis-status');
+    try {
+      var r = await fetch('http://localhost:5000/', {signal: AbortSignal.timeout(3000)});
+      if (r.ok) {
+        if (st) { st.textContent = '● 온라인'; st.className = ''; }
+      } else throw new Error();
+    } catch(e) {
+      if (st) { st.textContent = '● 오프라인'; st.className = 'offline'; }
+    }
+  };
 })();
 </script>
 </body>
