@@ -9071,14 +9071,14 @@ function settleSwitchTab(tab) {
     <span class="cm-last-update" id="cm-last-update"></span>
     <span class="cm-progress" id="cm-progress"></span>
     <button class="btn-update" id="cm-update-btn" onclick="cmStartUpdate()">
-      <span id="cm-update-icon">↻</span> 아임웹 데이터 업데이트
+      <span id="cm-update-icon">↻</span> 지금 업데이트 (GitHub Actions)
     </button>
   </div>
 </div>
 
 <div class="cm-no-proxy" id="cm-no-proxy">
-  ⚠ 프록시 서버에 연결할 수 없습니다. <b>ACHRO실행.bat</b>으로 시스템을 열면 자동 시작됩니다.
-  <span id="cm-retry-msg" style="margin-left:8px;color:#1565c0;font-weight:600"></span>
+  ⚠ 고객 데이터를 불러올 수 없습니다. GitHub Actions가 아직 실행되지 않았거나 데이터 파일이 없습니다.
+  <a href="https://github.com/jinhan0310/achro/actions/workflows/update_customers.yml" target="_blank" style="margin-left:8px;color:#1565c0;font-weight:600;text-decoration:underline">→ 지금 수동 실행하기</a>
 </div>
 
 <!-- 요약 카드 -->
@@ -9188,82 +9188,32 @@ function settleSwitchTab(tab) {
     return s;
   }
 
-  // ── 데이터 로드 ──────────────────────────────────────────────
-  let _retryTimer = null;
-  let _retryCount = 0;
+  // ── 데이터 로드 (customers_data.json, GitHub Pages와 동일 도메인) ──
+  const GH_ACTIONS_URL = 'https://github.com/jinhan0310/achro/actions/workflows/update_customers.yml';
 
   async function cmLoad(){
     try {
-      const r = await fetch(PROXY+'/api/customers', {signal:AbortSignal.timeout(5000)});
-      if(!r.ok) throw new Error('서버 오류');
+      // 캐시 방지용 타임스탬프
+      const r = await fetch('./customers_data.json?_=' + Date.now(), {cache: 'no-store'});
+      if(!r.ok) throw new Error('파일 없음');
       const d = await r.json();
-      // 성공 → 경고 숨기고 재시도 타이머 해제
       document.getElementById('cm-no-proxy').style.display = 'none';
-      if(_retryTimer){ clearTimeout(_retryTimer); _retryTimer=null; _retryCount=0; }
       _data = d.customers || [];
       cmUpdateStats();
       cmBuildTierBtns();
       cmRender();
-      if(d.status && d.status.last_done){
-        document.getElementById('cm-last-update').textContent = '마지막 업데이트: '+d.status.last_done;
+      if(d.updated_at){
+        document.getElementById('cm-last-update').textContent = '마지막 업데이트: ' + d.updated_at;
       }
     } catch(e){
-      // 실패 → 경고 표시 + 자동 재연결
       document.getElementById('cm-no-proxy').style.display = 'block';
-      _retryCount++;
-      const delay = Math.min(3 + _retryCount * 2, 15); // 최대 15초 간격
-      const msg = document.getElementById('cm-retry-msg');
-      if(msg) msg.textContent = `(${delay}초 후 자동 재연결 시도 중...)`;
-      _retryTimer = setTimeout(()=>{
-        if(msg) msg.textContent = '재연결 중...';
-        cmLoad();
-      }, delay * 1000);
     }
   }
 
-  // ── 업데이트 시작 ─────────────────────────────────────────────
-  window.cmStartUpdate = async function(){
-    const btn = document.getElementById('cm-update-btn');
-    const icon = document.getElementById('cm-update-icon');
-    const prog = document.getElementById('cm-progress');
-    btn.disabled = true;
-    icon.className = 'spin'; icon.textContent = '↻';
-    prog.className = 'cm-progress show';
-    prog.textContent = '시작 중...';
-    try {
-      await fetch(PROXY+'/api/customers/update', {method:'POST', signal:AbortSignal.timeout(5000)});
-      _pollTimer = setInterval(cmPollStatus, 2000);
-    } catch(e){
-      prog.textContent = '프록시 서버 연결 실패';
-      document.getElementById('cm-no-proxy').style.display = 'block';
-      btn.disabled = false;
-      icon.className = ''; icon.textContent = '↻';
-    }
+  // ── 업데이트 버튼 → GitHub Actions 페이지 열기 ───────────────
+  window.cmStartUpdate = function(){
+    window.open(GH_ACTIONS_URL, '_blank');
   };
-
-  async function cmPollStatus(){
-    try {
-      const r = await fetch(PROXY+'/api/customers/status', {signal:AbortSignal.timeout(5000)});
-      const s = await r.json();
-      const prog = document.getElementById('cm-progress');
-      prog.textContent = s.progress || '';
-      if(!s.running){
-        clearInterval(_pollTimer);
-        const btn  = document.getElementById('cm-update-btn');
-        const icon = document.getElementById('cm-update-icon');
-        btn.disabled = false;
-        icon.className = ''; icon.textContent = '↻';
-        if(s.last_error){
-          prog.textContent = '오류: '+s.last_error;
-          prog.style.color = 'var(--red)';
-        } else {
-          prog.className = 'cm-progress';
-          document.getElementById('cm-last-update').textContent = '마지막 업데이트: '+s.last_done;
-        }
-        cmLoad();
-      }
-    } catch(e){ /* 무시 */ }
-  }
 
   // ── 요약 통계 ─────────────────────────────────────────────────
   function cmUpdateStats(){
