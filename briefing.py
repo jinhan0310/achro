@@ -157,8 +157,8 @@ def fetch_imweb_orders(token):
 
     headers  = {"access-token": token}
     all_orders = []
-    page     = 1
-    pagesize = 100  # API 최대 100건
+    page     = 0          # 아임웹 API: offset=0 이 첫 페이지 (0-indexed)
+    pagesize = 100        # API 최대 100건
 
     # 어제의 Unix timestamp 범위 (로컬 자정 기준)
     yd           = (now - timedelta(days=1)).date()
@@ -170,7 +170,7 @@ def fetch_imweb_orders(token):
             r = requests.get(
                 f"{IMWEB_BASE}/shop/orders",
                 headers=headers,
-                params={"limit": pagesize, "page": page},
+                params={"limit": pagesize, "offset": page},
                 timeout=30,
             )
             r.raise_for_status()
