@@ -764,6 +764,7 @@ select option { background: #fff; }
   <button class="nav-btn" id="nav-btn-sale" onclick="goPageSettle(this,'sale')">판매등록</button>
   <button class="nav-btn" id="nav-btn-stock" onclick="goPageSettle(this,'stock')">재고현황</button>
   <button class="nav-btn" onclick="goPage('jarvis',this)">🤖 자비스</button>
+  <button class="nav-btn" onclick="goPage('customers',this)">고객관리</button>
   <div id="fb-user-bar" style="display:none;align-items:center;gap:8px;margin-left:auto;padding:0 8px;"></div>
 </nav>
 
@@ -4125,6 +4126,9 @@ function goPage(name, el) {
   if(name === 'jarvis') {
     jCheckStatus();
     setTimeout(function(){ var i=document.getElementById('jarvis-input'); if(i) i.focus(); }, 100);
+  }
+  if(name === 'customers') {
+    if(typeof cmInit === 'function') cmInit();
   }
   refreshAll();
 }
@@ -8942,5 +8946,470 @@ function settleSwitchTab(tab) {
   };
 })();
 </script>
-</body>
-</html>
+
+<!-- ══════════════════════════════════════════════
+     고객관리 페이지
+══════════════════════════════════════════════ -->
+<div class="page" id="page-customers">
+<style>
+#page-customers { padding: 28px 32px; }
+#page-customers .cm-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
+#page-customers .cm-title { font-size:18px; font-weight:700; color:var(--text); display:flex; align-items:center; gap:8px; }
+#page-customers .cm-title::before { content:''; width:3px; height:20px; background:var(--accent); border-radius:2px; }
+#page-customers .cm-actions { display:flex; align-items:center; gap:10px; }
+#page-customers .cm-last-update { font-size:11px; color:var(--text3); }
+#page-customers .btn-update {
+  padding:9px 20px; background:var(--accent); color:#fff;
+  border:none; border-radius:8px; font-size:13px; font-weight:600;
+  cursor:pointer; font-family:inherit; display:flex; align-items:center; gap:6px;
+  transition:background .15s;
+}
+#page-customers .btn-update:hover { background:#1976d2; }
+#page-customers .btn-update:disabled { opacity:.5; cursor:not-allowed; }
+#page-customers .btn-update .spin { display:inline-block; animation:cm-spin 1s linear infinite; }
+@keyframes cm-spin { to { transform:rotate(360deg); } }
+#page-customers .cm-progress {
+  display:none; margin-left:10px; font-size:12px; color:var(--accent);
+  font-weight:600; animation:cm-blink 1.2s ease-in-out infinite;
+}
+#page-customers .cm-progress.show { display:inline; }
+@keyframes cm-blink { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* 요약 카드 */
+#page-customers .cm-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:22px; }
+#page-customers .cm-stat {
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:10px; padding:14px 18px;
+}
+#page-customers .cm-stat-val { font-size:1.5rem; font-weight:700; font-family:'DM Mono',monospace; color:var(--accent); }
+#page-customers .cm-stat-lbl { font-size:11px; color:var(--text3); margin-top:3px; font-weight:600; letter-spacing:.3px; }
+
+/* 분포 바 */
+#page-customers .cm-dist-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:22px; }
+#page-customers .cm-dist { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px 18px; }
+#page-customers .cm-dist h4 { font-size:12px; font-weight:700; color:var(--text2); margin-bottom:12px; letter-spacing:.4px; }
+#page-customers .cm-bar-item { display:flex; align-items:center; gap:8px; margin-bottom:7px; font-size:12px; }
+#page-customers .cm-bar-label { width:72px; flex-shrink:0; color:var(--text); font-weight:500; }
+#page-customers .cm-bar-track { flex:1; background:var(--surface2); border-radius:4px; height:14px; overflow:hidden; }
+#page-customers .cm-bar-fill { height:100%; border-radius:4px; transition:width .5s ease; }
+#page-customers .cm-bar-cnt { width:44px; text-align:right; color:var(--text2); font-family:'DM Mono',monospace; }
+
+/* 탭 */
+#page-customers .cm-tabs { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:16px; }
+#page-customers .cm-tab {
+  padding:10px 22px; cursor:pointer; font-size:13px; font-weight:500;
+  color:var(--text2); border-bottom:2px solid transparent; margin-bottom:-2px;
+  background:none; border-top:none; border-left:none; border-right:none;
+  font-family:inherit; transition:all .15s;
+}
+#page-customers .cm-tab.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:700; }
+#page-customers .cm-tab:hover:not(.active) { color:var(--text); }
+
+/* 필터 + 툴바 */
+#page-customers .cm-tier-row { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+#page-customers .cm-tier-btn {
+  padding:5px 14px; border-radius:20px; border:1px solid var(--border2);
+  background:transparent; color:var(--text2); cursor:pointer;
+  font-size:12px; font-weight:500; font-family:inherit; transition:all .15s;
+}
+#page-customers .cm-tier-btn.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+#page-customers .cm-tier-btn:hover:not(.active) { border-color:var(--text2); color:var(--text); }
+#page-customers .cm-tier-badge { font-size:10px; background:rgba(0,0,0,.08); padding:1px 6px; border-radius:10px; margin-left:3px; }
+#page-customers .cm-tab.active .cm-tier-badge { background:rgba(255,255,255,.2); }
+
+#page-customers .cm-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
+#page-customers .cm-search {
+  flex:1; min-width:180px; max-width:320px;
+  background:var(--surface); border:1px solid var(--border2); border-radius:8px;
+  padding:8px 13px; color:var(--text); font-size:13px; font-family:inherit; outline:none;
+}
+#page-customers .cm-search:focus { border-color:var(--accent); }
+#page-customers .cm-search::placeholder { color:var(--text3); }
+#page-customers .cm-csv { padding:8px 14px; border-radius:8px; border:none; background:var(--green); color:#fff; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+#page-customers .cm-cnt { font-size:12px; color:var(--text3); margin-left:auto; }
+
+/* 테이블 */
+#page-customers .cm-tbl-wrap { background:var(--surface); border:1px solid var(--border); border-radius:10px; overflow:auto; max-height:calc(100vh - 380px); }
+#page-customers table { width:100%; border-collapse:collapse; font-size:13px; min-width:700px; }
+#page-customers thead tr { background:var(--surface2); position:sticky; top:0; z-index:5; }
+#page-customers thead th { padding:10px 14px; text-align:left; font-size:11px; font-weight:600; color:var(--text2); border-bottom:1px solid var(--border); white-space:nowrap; cursor:pointer; letter-spacing:.4px; user-select:none; }
+#page-customers thead th:hover { color:var(--accent); }
+#page-customers thead th.cm-sorted-desc::after { content:' ↓'; color:var(--accent); }
+#page-customers thead th.cm-sorted-asc::after  { content:' ↑'; color:var(--accent); }
+#page-customers tbody tr { border-bottom:1px solid var(--border); transition:background .1s; }
+#page-customers tbody tr:hover td { background:#dbeafe44; }
+#page-customers tbody td { padding:9px 14px; color:var(--text); vertical-align:middle; }
+#page-customers .cm-rank { color:var(--text3); font-size:11px; font-family:'DM Mono',monospace; }
+#page-customers .cm-name { font-weight:600; }
+#page-customers .cm-phone { color:var(--blue); font-family:'DM Mono',monospace; font-size:12px; }
+#page-customers .cm-email { color:var(--text2); font-size:11px; }
+#page-customers .cm-amount { color:var(--green); font-weight:700; font-family:'DM Mono',monospace; }
+#page-customers .cm-count { color:#7c3aed; font-weight:700; }
+#page-customers .cm-date { color:var(--text3); font-size:11px; white-space:nowrap; font-family:'DM Mono',monospace; }
+#page-customers .cm-chip { display:inline-block; padding:2px 9px; border-radius:10px; font-size:11px; font-weight:600; }
+#page-customers .chip-a0 { background:#e3edff; color:#1565c0; }
+#page-customers .chip-a1 { background:#e8f5e9; color:#2e7d32; }
+#page-customers .chip-a2 { background:#fff8e1; color:#f57f17; }
+#page-customers .chip-a3 { background:#fce4ec; color:#c62828; }
+#page-customers .chip-a4 { background:#ede7f6; color:#6a1b9a; }
+#page-customers .chip-c0 { background:#e3edff; color:#1565c0; }
+#page-customers .chip-c1 { background:#e8f5e9; color:#2e7d32; }
+#page-customers .chip-c2 { background:#fff8e1; color:#f57f17; }
+#page-customers .chip-c3 { background:#fce4ec; color:#c62828; }
+#page-customers .chip-c4 { background:#ede7f6; color:#6a1b9a; }
+#page-customers .cm-empty { text-align:center; padding:60px; color:var(--text3); font-size:13px; }
+#page-customers .cm-no-proxy { background:#fff3cd; border:1px solid #ffc107; border-radius:8px; padding:14px 18px; font-size:12px; color:#856404; margin-bottom:16px; display:none; }
+@media(max-width:900px){
+  #page-customers .cm-dist-row { grid-template-columns:1fr; }
+  #page-customers .cm-stats { grid-template-columns:repeat(2,1fr); }
+}
+</style>
+
+<div class="cm-header">
+  <div class="cm-title">고객관리</div>
+  <div class="cm-actions">
+    <span class="cm-last-update" id="cm-last-update"></span>
+    <span class="cm-progress" id="cm-progress"></span>
+    <button class="btn-update" id="cm-update-btn" onclick="cmStartUpdate()">
+      <span id="cm-update-icon">↻</span> 아임웹 데이터 업데이트
+    </button>
+  </div>
+</div>
+
+<div class="cm-no-proxy" id="cm-no-proxy">
+  ⚠ 프록시 서버(proxy.py)가 실행 중이지 않습니다. 터미널에서 <code>python proxy.py</code>를 먼저 실행하세요.
+</div>
+
+<!-- 요약 카드 -->
+<div class="cm-stats" id="cm-stats">
+  <div class="cm-stat"><div class="cm-stat-val" id="cm-s-total">-</div><div class="cm-stat-lbl">전체 고객수</div></div>
+  <div class="cm-stat"><div class="cm-stat-val" id="cm-s-amt">-</div><div class="cm-stat-lbl">누적 총 매출</div></div>
+  <div class="cm-stat"><div class="cm-stat-val" id="cm-s-avg">-</div><div class="cm-stat-lbl">고객 평균 구매액</div></div>
+  <div class="cm-stat"><div class="cm-stat-val" id="cm-s-repeat" style="color:#7c3aed">-</div><div class="cm-stat-lbl">재구매 고객</div></div>
+  <div class="cm-stat"><div class="cm-stat-val" id="cm-s-vip" style="color:#c62828">-</div><div class="cm-stat-lbl">40만원+ 우수고객</div></div>
+</div>
+
+<!-- 분포 바 -->
+<div class="cm-dist-row">
+  <div class="cm-dist">
+    <h4>누적금액별 분포</h4>
+    <div id="cm-amt-dist"></div>
+  </div>
+  <div class="cm-dist">
+    <h4>구매횟수별 분포</h4>
+    <div id="cm-cnt-dist"></div>
+  </div>
+</div>
+
+<!-- 탭 -->
+<div class="cm-tabs">
+  <button class="cm-tab active" id="cm-tab-amt" onclick="cmSwitchTab('amt')">누적 구매금액별</button>
+  <button class="cm-tab" id="cm-tab-cnt" onclick="cmSwitchTab('cnt')">반복 구매횟수별</button>
+</div>
+
+<!-- 누적금액 패널 -->
+<div id="cm-panel-amt">
+  <div class="cm-tier-row" id="cm-amt-tiers"></div>
+  <div class="cm-toolbar">
+    <input class="cm-search" id="cm-amt-search" placeholder="이름 / 전화번호 / 이메일..." oninput="cmRender()">
+    <button class="cm-csv" onclick="cmExportCSV('amt')">CSV 내보내기</button>
+    <span class="cm-cnt" id="cm-amt-cnt"></span>
+  </div>
+  <div class="cm-tbl-wrap">
+    <table>
+      <thead><tr>
+        <th style="width:36px">#</th>
+        <th onclick="cmSort('amt','name')">이름</th>
+        <th onclick="cmSort('amt','phone')">전화번호</th>
+        <th onclick="cmSort('amt','email')">이메일</th>
+        <th id="cm-amt-th-amt" onclick="cmSort('amt','total_amount')">누적금액</th>
+        <th onclick="cmSort('amt','order_count')">구매횟수</th>
+        <th onclick="cmSort('amt','first_order')">첫구매일</th>
+        <th onclick="cmSort('amt','last_order')">최근구매일</th>
+        <th>구간</th>
+      </tr></thead>
+      <tbody id="cm-amt-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 구매횟수 패널 -->
+<div id="cm-panel-cnt" style="display:none">
+  <div class="cm-tier-row" id="cm-cnt-tiers"></div>
+  <div class="cm-toolbar">
+    <input class="cm-search" id="cm-cnt-search" placeholder="이름 / 전화번호 / 이메일..." oninput="cmRender()">
+    <button class="cm-csv" onclick="cmExportCSV('cnt')">CSV 내보내기</button>
+    <span class="cm-cnt" id="cm-cnt-cnt"></span>
+  </div>
+  <div class="cm-tbl-wrap">
+    <table>
+      <thead><tr>
+        <th style="width:36px">#</th>
+        <th onclick="cmSort('cnt','name')">이름</th>
+        <th onclick="cmSort('cnt','phone')">전화번호</th>
+        <th onclick="cmSort('cnt','email')">이메일</th>
+        <th id="cm-cnt-th-cnt" onclick="cmSort('cnt','order_count')">구매횟수</th>
+        <th onclick="cmSort('cnt','total_amount')">누적금액</th>
+        <th onclick="cmSort('cnt','first_order')">첫구매일</th>
+        <th onclick="cmSort('cnt','last_order')">최근구매일</th>
+        <th>구간</th>
+      </tr></thead>
+      <tbody id="cm-cnt-tbody"></tbody>
+    </table>
+  </div>
+</div>
+</div><!-- /page-customers -->
+
+<script>
+// ── 고객관리 모듈 ────────────────────────────────────────────────
+(function(){
+  const PROXY = 'http://localhost:7777';
+  const AMT_TIERS = ['10만원미만','10-20만원','20-30만원','30-40만원','40만원이상'];
+  const CNT_TIERS = ['1회','2회','3회','4-5회','6회이상'];
+  const AMT_CHIP  = ['chip-a0','chip-a1','chip-a2','chip-a3','chip-a4'];
+  const CNT_CHIP  = ['chip-c0','chip-c1','chip-c2','chip-c3','chip-c4'];
+  const BAR_COLORS = ['#1565c0','#2e7d52','#f57f17','#c62828','#6a1b9a'];
+
+  let _data     = [];
+  let _tab      = 'amt';
+  let _amtFilter = 'all';
+  let _cntFilter = 'all';
+  let _amtSort  = {key:'total_amount', dir:-1};
+  let _cntSort  = {key:'order_count',  dir:-1};
+  let _pollTimer = null;
+
+  function fmtAmt(n){ return n.toLocaleString('ko-KR')+'원'; }
+  function fmtPhone(s){
+    if(!s) return '-';
+    s = s.replace(/[^0-9]/g,'');
+    if(s.length===11) return s.replace(/(\d{3})(\d{4})(\d{4})/,'$1-$2-$3');
+    if(s.length===10) return s.replace(/(\d{3})(\d{3,4})(\d{4})/,'$1-$2-$3');
+    return s;
+  }
+
+  // ── 데이터 로드 ──────────────────────────────────────────────
+  async function cmLoad(){
+    try {
+      const r = await fetch(PROXY+'/api/customers', {signal:AbortSignal.timeout(5000)});
+      if(!r.ok) throw new Error('서버 오류');
+      const d = await r.json();
+      document.getElementById('cm-no-proxy').style.display = 'none';
+      _data = d.customers || [];
+      cmUpdateStats();
+      cmBuildTierBtns();
+      cmRender();
+      if(d.status && d.status.last_done){
+        document.getElementById('cm-last-update').textContent = '마지막 업데이트: '+d.status.last_done;
+      }
+    } catch(e){
+      document.getElementById('cm-no-proxy').style.display = 'block';
+    }
+  }
+
+  // ── 업데이트 시작 ─────────────────────────────────────────────
+  window.cmStartUpdate = async function(){
+    const btn = document.getElementById('cm-update-btn');
+    const icon = document.getElementById('cm-update-icon');
+    const prog = document.getElementById('cm-progress');
+    btn.disabled = true;
+    icon.className = 'spin'; icon.textContent = '↻';
+    prog.className = 'cm-progress show';
+    prog.textContent = '시작 중...';
+    try {
+      await fetch(PROXY+'/api/customers/update', {method:'POST', signal:AbortSignal.timeout(5000)});
+      _pollTimer = setInterval(cmPollStatus, 2000);
+    } catch(e){
+      prog.textContent = '프록시 서버 연결 실패';
+      document.getElementById('cm-no-proxy').style.display = 'block';
+      btn.disabled = false;
+      icon.className = ''; icon.textContent = '↻';
+    }
+  };
+
+  async function cmPollStatus(){
+    try {
+      const r = await fetch(PROXY+'/api/customers/status', {signal:AbortSignal.timeout(5000)});
+      const s = await r.json();
+      const prog = document.getElementById('cm-progress');
+      prog.textContent = s.progress || '';
+      if(!s.running){
+        clearInterval(_pollTimer);
+        const btn  = document.getElementById('cm-update-btn');
+        const icon = document.getElementById('cm-update-icon');
+        btn.disabled = false;
+        icon.className = ''; icon.textContent = '↻';
+        if(s.last_error){
+          prog.textContent = '오류: '+s.last_error;
+          prog.style.color = 'var(--red)';
+        } else {
+          prog.className = 'cm-progress';
+          document.getElementById('cm-last-update').textContent = '마지막 업데이트: '+s.last_done;
+        }
+        cmLoad();
+      }
+    } catch(e){ /* 무시 */ }
+  }
+
+  // ── 요약 통계 ─────────────────────────────────────────────────
+  function cmUpdateStats(){
+    const total = _data.length;
+    const totalAmt = _data.reduce((s,c)=>s+c.total_amount,0);
+    const repeat   = _data.filter(c=>c.order_count>=2).length;
+    const vip      = _data.filter(c=>c.total_amount>=400000).length;
+    document.getElementById('cm-s-total').textContent  = total.toLocaleString();
+    document.getElementById('cm-s-amt').textContent    = (totalAmt/10000).toFixed(0)+'만원';
+    document.getElementById('cm-s-avg').textContent    = total ? fmtAmt(Math.round(totalAmt/total)) : '-';
+    document.getElementById('cm-s-repeat').textContent = repeat.toLocaleString()+'명';
+    document.getElementById('cm-s-vip').textContent    = vip.toLocaleString()+'명';
+
+    // 분포 바
+    function renderDist(containerId, tiers, tierKey, colors){
+      const el = document.getElementById(containerId);
+      const max = Math.max(1, ...tiers.map(t=>_data.filter(c=>c[tierKey]===t).length));
+      el.innerHTML = tiers.map((t,i)=>{
+        const n = _data.filter(c=>c[tierKey]===t).length;
+        const pct = Math.round(n/max*100);
+        return `<div class="cm-bar-item">
+          <span class="cm-bar-label">${t}</span>
+          <div class="cm-bar-track"><div class="cm-bar-fill" style="width:${pct}%;background:${colors[i]}"></div></div>
+          <span class="cm-bar-cnt">${n.toLocaleString()}</span>
+        </div>`;
+      }).join('');
+    }
+    renderDist('cm-amt-dist', AMT_TIERS, 'amount_tier', BAR_COLORS);
+    renderDist('cm-cnt-dist', CNT_TIERS, 'count_tier',  BAR_COLORS);
+  }
+
+  // ── 필터 버튼 생성 ────────────────────────────────────────────
+  function cmBuildTierBtns(){
+    function build(containerId, tiers, tierKey, active, onclick){
+      const el = document.getElementById(containerId);
+      const total = _data.length;
+      el.innerHTML = `<button class="cm-tier-btn active" onclick="${onclick}('all')">전체 <span class="cm-tier-badge">${total}</span></button>` +
+        tiers.map(t=>{
+          const n = _data.filter(c=>c[tierKey]===t).length;
+          return `<button class="cm-tier-btn" onclick="${onclick}('${t}')">${t} <span class="cm-tier-badge">${n}</span></button>`;
+        }).join('');
+    }
+    build('cm-amt-tiers', AMT_TIERS, 'amount_tier', _amtFilter, 'cmFilterAmt');
+    build('cm-cnt-tiers', CNT_TIERS, 'count_tier',  _cntFilter, 'cmFilterCnt');
+    _markTierBtn('cm-amt-tiers', _amtFilter);
+    _markTierBtn('cm-cnt-tiers', _cntFilter);
+  }
+
+  function _markTierBtn(containerId, active){
+    document.querySelectorAll('#'+containerId+' .cm-tier-btn').forEach(b=>{
+      const t = b.textContent.trim().split(' ')[0];
+      b.classList.toggle('active', active==='all' ? b===b.parentElement.firstElementChild : t===active);
+    });
+  }
+
+  window.cmFilterAmt = function(t){ _amtFilter=t; _markTierBtn('cm-amt-tiers',t); cmRender(); };
+  window.cmFilterCnt = function(t){ _cntFilter=t; _markTierBtn('cm-cnt-tiers',t); cmRender(); };
+
+  // ── 탭 전환 ───────────────────────────────────────────────────
+  window.cmSwitchTab = function(tab){
+    _tab = tab;
+    document.getElementById('cm-tab-amt').classList.toggle('active', tab==='amt');
+    document.getElementById('cm-tab-cnt').classList.toggle('active', tab==='cnt');
+    document.getElementById('cm-panel-amt').style.display = tab==='amt' ? '' : 'none';
+    document.getElementById('cm-panel-cnt').style.display = tab==='cnt' ? '' : 'none';
+    cmRender();
+  };
+
+  // ── 정렬 ──────────────────────────────────────────────────────
+  window.cmSort = function(tab, key){
+    const s = tab==='amt' ? _amtSort : _cntSort;
+    if(s.key===key) s.dir*=-1; else { s.key=key; s.dir=-1; }
+    // 헤더 강조
+    const thId = tab==='amt' ? 'cm-amt-th-amt' : 'cm-cnt-th-cnt';
+    document.querySelectorAll('#cm-panel-'+tab+' thead th').forEach(th=>{
+      th.classList.remove('cm-sorted-asc','cm-sorted-desc');
+    });
+    cmRender();
+  };
+
+  // ── 렌더 ──────────────────────────────────────────────────────
+  window.cmRender = function(){
+    renderPanel('amt'); renderPanel('cnt');
+  };
+
+  function getFiltered(tierKey, tierVal, searchId){
+    const q = (document.getElementById(searchId)?.value||'').toLowerCase();
+    return _data.filter(c=>{
+      if(tierVal!=='all' && c[tierKey]!==tierVal) return false;
+      if(q) return (c.name||'').toLowerCase().includes(q)||
+                   (c.phone||'').includes(q)||
+                   (c.email||'').toLowerCase().includes(q);
+      return true;
+    });
+  }
+
+  function renderPanel(tab){
+    const isAmt  = tab==='amt';
+    const s      = isAmt ? _amtSort : _cntSort;
+    const tierKey= isAmt ? 'amount_tier' : 'count_tier';
+    const filter = isAmt ? _amtFilter : _cntFilter;
+    const chips  = isAmt ? AMT_CHIP : CNT_CHIP;
+    const tiers  = isAmt ? AMT_TIERS : CNT_TIERS;
+
+    let data = getFiltered(tierKey, filter, isAmt?'cm-amt-search':'cm-cnt-search');
+    data = [...data].sort((a,b)=>{
+      const va=a[s.key]??'', vb=b[s.key]??'';
+      if(typeof va==='number') return s.dir*(va-vb);
+      return s.dir*(va<vb?-1:va>vb?1:0);
+    });
+
+    document.getElementById(isAmt?'cm-amt-cnt':'cm-cnt-cnt').textContent = data.length.toLocaleString()+'명';
+    const tbody = document.getElementById(isAmt?'cm-amt-tbody':'cm-cnt-tbody');
+    if(!data.length){
+      tbody.innerHTML = '<tr><td colspan="9" class="cm-empty">해당 고객이 없습니다</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.map((c,i)=>{
+      const chipCls = chips[tiers.indexOf(isAmt?c.amount_tier:c.count_tier)]||'';
+      const tierVal = isAmt ? c.amount_tier : c.count_tier;
+      return `<tr>
+        <td class="cm-rank">${i+1}</td>
+        <td class="cm-name">${c.name||'<span style="color:var(--text3)">-</span>'}</td>
+        <td class="cm-phone">${fmtPhone(c.phone)}</td>
+        <td class="cm-email">${c.email||'-'}</td>
+        ${isAmt
+          ? `<td class="cm-amount">${fmtAmt(c.total_amount)}</td><td class="cm-count">${c.order_count}회</td>`
+          : `<td class="cm-count">${c.order_count}회</td><td class="cm-amount">${fmtAmt(c.total_amount)}</td>`
+        }
+        <td class="cm-date">${c.first_order||'-'}</td>
+        <td class="cm-date">${c.last_order||'-'}</td>
+        <td><span class="cm-chip ${chipCls}">${tierVal}</span></td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── CSV 내보내기 ──────────────────────────────────────────────
+  window.cmExportCSV = function(tab){
+    const isAmt  = tab==='amt';
+    const data   = getFiltered(
+      isAmt?'amount_tier':'count_tier',
+      isAmt?_amtFilter:_cntFilter,
+      isAmt?'cm-amt-search':'cm-cnt-search'
+    );
+    const hdr  = '이름,전화번호,이메일,누적금액(원),구매횟수,첫구매일,최근구매일,구간';
+    const rows = data.map(c=>[
+      c.name||'', c.phone||'', c.email||'',
+      c.total_amount, c.order_count,
+      c.first_order||'', c.last_order||'',
+      isAmt?c.amount_tier:c.count_tier
+    ].join(','));
+    const csv = '﻿'+hdr+'\n'+rows.join('\n');
+    const a   = document.createElement('a');
+    a.href    = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+    a.download= 'ACHRO_고객_'+tab+'_'+new Date().toISOString().slice(0,10)+'.csv';
+    a.click();
+  };
+
+  // ── 페이지 진입 시 초기화 ────────────────────────────────────
+  window.cmInit = function(){
+    if(_data.length === 0) cmLoad();
+  };
+})();
+</script>
