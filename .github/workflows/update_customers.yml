@@ -1,0 +1,36 @@
+name: 고객 데이터 업데이트
+
+on:
+  schedule:
+    - cron: '0 0 * * *'   # 매일 오전 9시 KST (UTC 0시)
+    - cron: '0 12 * * *'  # 매일 오후 9시 KST (UTC 12시)
+  workflow_dispatch:        # GitHub Actions 탭에서 수동 실행 가능
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 아임웹 고객 데이터 수집
+        env:
+          IMWEB_API_KEY: ${{ secrets.IMWEB_API_KEY }}
+          IMWEB_SECRET_KEY: ${{ secrets.IMWEB_SECRET_KEY }}
+        run: python fetch_customers.py
+
+      - name: customers_data.json 커밋 & 푸시
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add customers_data.json
+          git diff --cached --quiet || git commit -m "chore: 고객 데이터 자동 업데이트 $(date +'%Y-%m-%d %H:%M KST' -d '+9 hours')"
+          git push
