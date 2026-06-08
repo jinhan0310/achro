@@ -57,7 +57,9 @@ if not all([ANTHROPIC_API_KEY, META_ACCESS_TOKEN, META_AD_ACCOUNT_ID]):
 now        = datetime.now()
 yesterday  = (now - timedelta(days=1)).strftime("%Y-%m-%d")
 yesterday_d = (now - timedelta(days=1)).strftime("%Y%m%d")   # 아임웹용 YYYYMMDD
-week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+_week_monday = now - timedelta(days=now.weekday())
+# 오늘이 월요일이면 week_start가 yesterday보다 미래가 되므로 어제부터 시작
+week_start = min(_week_monday, now - timedelta(days=1)).strftime("%Y-%m-%d")
 
 META_BASE     = "https://graph.facebook.com/v19.0"
 KAKAO_MEMO    = "https://kapi.kakao.com/v2/api/talk/memo/default/send"
