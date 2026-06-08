@@ -9077,7 +9077,8 @@ function settleSwitchTab(tab) {
 </div>
 
 <div class="cm-no-proxy" id="cm-no-proxy">
-  ⚠ 프록시 서버(proxy.py)가 실행 중이지 않습니다. 터미널에서 <code>python proxy.py</code>를 먼저 실행하세요.
+  ⚠ 프록시 서버에 연결할 수 없습니다. <b>ACHRO실행.bat</b>으로 시스템을 열면 자동 시작됩니다.
+  <span id="cm-retry-msg" style="margin-left:8px;color:#1565c0;font-weight:600"></span>
 </div>
 
 <!-- 요약 카드 -->
@@ -9188,12 +9189,17 @@ function settleSwitchTab(tab) {
   }
 
   // ── 데이터 로드 ──────────────────────────────────────────────
+  let _retryTimer = null;
+  let _retryCount = 0;
+
   async function cmLoad(){
     try {
       const r = await fetch(PROXY+'/api/customers', {signal:AbortSignal.timeout(5000)});
       if(!r.ok) throw new Error('서버 오류');
       const d = await r.json();
+      // 성공 → 경고 숨기고 재시도 타이머 해제
       document.getElementById('cm-no-proxy').style.display = 'none';
+      if(_retryTimer){ clearTimeout(_retryTimer); _retryTimer=null; _retryCount=0; }
       _data = d.customers || [];
       cmUpdateStats();
       cmBuildTierBtns();
@@ -9202,7 +9208,16 @@ function settleSwitchTab(tab) {
         document.getElementById('cm-last-update').textContent = '마지막 업데이트: '+d.status.last_done;
       }
     } catch(e){
+      // 실패 → 경고 표시 + 자동 재연결
       document.getElementById('cm-no-proxy').style.display = 'block';
+      _retryCount++;
+      const delay = Math.min(3 + _retryCount * 2, 15); // 최대 15초 간격
+      const msg = document.getElementById('cm-retry-msg');
+      if(msg) msg.textContent = `(${delay}초 후 자동 재연결 시도 중...)`;
+      _retryTimer = setTimeout(()=>{
+        if(msg) msg.textContent = '재연결 중...';
+        cmLoad();
+      }, delay * 1000);
     }
   }
 
