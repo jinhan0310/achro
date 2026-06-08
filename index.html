@@ -1963,7 +1963,8 @@ function dlSettleExcel() {
     Object.keys(md).forEach(function(dt){ if(dt<today) prevMinus+=md[dt]; else if(dt===today) todayMinus+=md[dt]; });
     var prevPay  = pays.filter(function(p){return p.date<today;}).reduce(function(s,p){return s+p.amount;},0);
     var todayPay = pays.filter(function(p){return p.date===today;}).reduce(function(s,p){return s+p.amount;},0);
-    var 전잔 = prevIn - prevMinus - prevPay;
+    var prevInV = isVat ? Math.round(prevIn*1.1) : prevIn;
+    var 전잔 = prevInV - prevMinus - prevPay;
     var todayInV = isVat ? Math.round(todayIn*1.1) : todayIn;
     var 최종잔 = 전잔 + todayInV - todayMinus - todayPay;
     return [v, isVat?'Y':'', 전잔, todayInV, todayMinus, todayPay, 최종잔];
@@ -2134,8 +2135,10 @@ function openKpiModal(type) {
     var pays = payments.filter(function(p) { return p.vendor === v; });
     var prevPay = pays.filter(function(p) { return p.date < today; }).reduce(function(s, p) { return s + p.amount; }, 0);
     var todayPay = pays.filter(function(p) { return p.date === today; }).reduce(function(s, p) { return s + p.amount; }, 0);
-    var 전잔 = vd.prevIn - md.prevMinus - prevPay;
-    var 최종잔 = 전잔 + vd.todayIn - md.todayMinus - todayPay;
+    var prevInV = isVat ? Math.round(vd.prevIn*1.1) : vd.prevIn;
+    var 전잔 = prevInV - md.prevMinus - prevPay;
+    var todayInV2 = isVat ? Math.round(vd.todayIn*1.1) : vd.todayIn;
+    var 최종잔 = 전잔 + todayInV2 - md.todayMinus - todayPay;
 
     var val = type === 'prev' ? 전잔 : type === 'today' ? vd.todayIn - md.todayMinus : 최종잔;
     return { vendor: v, val: val };
@@ -2302,7 +2305,8 @@ function renderVendorLedger(searchQ) {
     // 전잔: 전일까지 입고 - 전일까지 마이너스 - 전일까지 입금
     var prevPay = pays.filter(function(p){ return p.date < today; }).reduce(function(s,p){ return s+p.amount; },0);
     var todayPay = pays.filter(function(p){ return p.date === today; }).reduce(function(s,p){ return s+p.amount; },0);
-    var 전잔    = prevIn - prevMinus - prevPay;
+    var prevInV  = isVat ? Math.round(prevIn*1.1) : prevIn;
+    var 전잔    = prevInV - prevMinus - prevPay;
     var todayInV = isVat ? Math.round(todayIn*1.1) : todayIn;
     var 당잔    = todayInV - todayMinus - todayPay;
     var 최종잔  = 전잔 + 당잔;
@@ -9222,7 +9226,7 @@ function settleSwitchTab(tab) {
     const repeat   = _data.filter(c=>c.order_count>=2).length;
     const vip      = _data.filter(c=>c.total_amount>=400000).length;
     document.getElementById('cm-s-total').textContent  = total.toLocaleString();
-    document.getElementById('cm-s-amt').textContent    = (totalAmt/10000).toFixed(0)+'만원';
+    document.getElementById('cm-s-amt').textContent    = totalAmt.toLocaleString('ko-KR')+'원';
     document.getElementById('cm-s-avg').textContent    = total ? fmtAmt(Math.round(totalAmt/total)) : '-';
     document.getElementById('cm-s-repeat').textContent = repeat.toLocaleString()+'명';
     document.getElementById('cm-s-vip').textContent    = vip.toLocaleString()+'명';
