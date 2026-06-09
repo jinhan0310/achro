@@ -113,6 +113,69 @@ def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
 
     return all_items, None
 
+def _oms_fetch_order_memos():
+    """관리자 메모가 있는 주문 목록 반환 (최근 10페이지 스캔)"""
+    token = _oms_load_token()
+    if not token:
+        return None, 'OMS 토큰 없음 — fetch_orders_oms.py 또는 check_delivery.py를 먼저 실행하세요.'
+
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Accept': 'application/json',
+        'Referer': 'https://app.oms.imweb.me/',
+    }
+
+    STATUS_LABEL = {
+        'OSS01': '상품준비중', 'OSS02': '배송대기', 'OSS03': '배송중',
+        'OSS04': '배송완료', 'OSS05': '구매확정', 'OSS06': '취소',
+        'OSS07': '교환', 'OSS08': '반품', 'OSS09': '환불',
+    }
+
+    result = []
+    for page in range(1, 11):
+        params = {'page': page, 'sort': 'wtime', 'pageSize': 100}
+        url = OMS_BASE + '/order?' + urlencode(params)
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                body = json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                return None, 'OMS 토큰 만료 — fetch_orders_oms.py를 실행해 토큰을 갱신하세요.'
+            return None, f'OMS API 오류 (HTTP {e.code}): {e.reason}'
+        except Exception as e:
+            return None, f'OMS API 오류: {e}'
+
+        data_block = body.get('data') or {}
+        orders = data_block.get('list', [])
+        if not orders:
+            break
+
+        for order in orders:
+            memos = order.get('orderMemos') or []
+            if not memos:
+                continue
+            active_memos = [m for m in memos if m.get('isDel') != 'Y']
+            if not active_memos:
+                continue
+            status_cd = order.get('sectionStatusCd', '')
+            result.append({
+                'orderNo':   str(order['orderNo']),
+                'orderDate': order['orderDate'][:10],
+                'orderer':   order.get('ordererName', ''),
+                'status':    STATUS_LABEL.get(status_cd, status_cd),
+                'channel':   order.get('saleChannelName', ''),
+                'memos': [{
+                    'memo':   m.get('memo', ''),
+                    'author': m.get('name', ''),
+                    'time':   m.get('wtime', '')[:16].replace('T', ' ') if m.get('wtime') else '',
+                    'isDone': m.get('isDone', 'N'),
+                } for m in active_memos],
+            })
+
+    return result, None
+
+
 # ── 아임웹 API 헬퍼 ─────────────────────────────────────────────────
 def _save_delivery_excel(items):
     """배송대기 아이템 목록을 Excel로 생성해 Downloads 폴더에 저장"""
@@ -356,6 +419,12 @@ class ProxyHandler(BaseHTTPRequestHandler):
             if err:
                 return self._json(200, {'ok': False, 'msg': err})
             return self._json(200, {'ok': True, 'items': items, 'count': len(items)})
+
+        if self.path.startswith('/api/order-memos'):
+            orders, err = _oms_fetch_order_memos()
+            if err:
+                return self._json(200, {'ok': False, 'msg': err})
+            return self._json(200, {'ok': True, 'orders': orders, 'count': len(orders)})
 
         self._proxy('GET')
 
