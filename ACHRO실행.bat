@@ -5,16 +5,25 @@ title ACHRO 재고관리 시스템
 :: ── 오늘 날짜 (yyyy-MM-dd) ───────────────────────────────────────
 for /f %%i in ('powershell -nologo -command "Get-Date -Format 'yyyy-MM-dd'"') do set TODAY=%%i
 
-:: ── 프록시 서버 확인 (포트 7777) ─────────────────────────────────
-netstat -ano | findstr ":7777 " | findstr "LISTENING" > nul 2>&1
+:: ── 최신 코드 업데이트 (git pull) ────────────────────────────────
+echo [UPDATE] 최신 코드 업데이트 중...
+cd /d "%~dp0"
+git pull origin main > nul 2>&1
 if %errorlevel% equ 0 (
-    echo [OK] 프록시 서버 이미 실행 중
+    echo [OK] 코드 최신 상태
 ) else (
-    echo [START] 프록시 서버 시작 중...
-    start "ACHRO-Proxy" /min cmd /c "cd /d "%~dp0" && python proxy.py"
-    timeout /t 2 /nobreak > nul
-    echo [OK] 프록시 서버 시작 완료
+    echo [WARN] git pull 실패 (오프라인이거나 git 미설치) — 기존 코드로 실행
 )
+
+:: ── 프록시 서버 재시작 (항상 최신 코드로) ───────────────────────
+echo [RESTART] 프록시 서버 재시작 중...
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":7777 " ^| findstr "LISTENING"') do (
+    taskkill /f /pid %%a > nul 2>&1
+)
+timeout /t 1 /nobreak > nul
+start "ACHRO-Proxy" /min cmd /c "cd /d "%~dp0" && python proxy.py"
+timeout /t 2 /nobreak > nul
+echo [OK] 프록시 서버 시작 완료
 
 :: ── 자비스 서버 확인 (포트 5000) ─────────────────────────────────
 netstat -ano | findstr ":5000 " | findstr "LISTENING" > nul 2>&1
