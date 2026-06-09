@@ -765,6 +765,7 @@ select option { background: #fff; }
   <button class="nav-btn" id="nav-btn-stock" onclick="goPageSettle(this,'stock')">재고현황</button>
   <button class="nav-btn" onclick="goPage('jarvis',this)">🤖 자비스</button>
   <button class="nav-btn" onclick="goPage('customers',this)">고객관리</button>
+  <button class="nav-btn" onclick="goPage('ordermemo',this)">관리자메모</button>
   <div id="fb-user-bar" style="display:none;align-items:center;gap:8px;margin-left:auto;padding:0 8px;"></div>
 </nav>
 
@@ -3896,6 +3897,31 @@ function renderVendorHistTable() {
 </div>
 
 <!-- ════════════════════════════
+     관리자 메모 조회
+════════════════════════════ -->
+<div class="page" id="page-ordermemo">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+    <div class="sec-title">관리자 메모</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span style="font-size:12px;color:var(--text2)" id="om-updated"></span>
+      <button class="btn btn-dark" id="om-refreshBtn" onclick="omLoad()">불러오기</button>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:0 12px;margin-bottom:16px">
+    <span>🔍</span>
+    <input id="om-srch" placeholder="주문번호, 주문자, 메모 내용 검색..." oninput="omRender()"
+      style="flex:1;background:none;border:none;color:var(--text);font-size:13px;padding:9px 0;outline:none">
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:4px;cursor:pointer">
+      <input type="checkbox" id="om-undoneOnly" onchange="omRender()"> 미완료만 보기
+    </label>
+  </div>
+  <div id="om-status" style="text-align:center;padding:40px;font-size:14px;color:var(--text2)">불러오기 버튼을 눌러주세요</div>
+  <div id="om-list" style="display:flex;flex-direction:column;gap:12px"></div>
+</div>
+
+<!-- ════════════════════════════
      MODALS
 ════════════════════════════ -->
 <!-- Add Product -->
@@ -4226,6 +4252,9 @@ function goPage(name, el) {
   }
   if(name === 'customers') {
     if(typeof cmInit === 'function') cmInit();
+  }
+  if(name === 'ordermemo') {
+    // 자동 로드하지 않음 — 버튼 클릭 시 로드
   }
   refreshAll();
 }
@@ -9390,5 +9419,103 @@ function settleSwitchTab(tab) {
   window.cmInit = function(){
     if(_data.length === 0) cmLoad();
   };
+})();
+
+// ── 관리자 메모 모듈 ─────────────────────────────────────────────
+(function(){
+  var _data = [];
+  var STATUS_COLOR = {
+    '배송대기':'#1976d2','상품준비중':'#f59e0b','배송중':'#7c3aed',
+    '배송완료':'#2e7d52','구매확정':'#2e7d52','취소':'#c62828',
+    '반품':'#c62828','교환':'#c62828',
+  };
+
+  window.omLoad = function(){
+    var btn = document.getElementById('om-refreshBtn');
+    var statusEl = document.getElementById('om-status');
+    var listEl = document.getElementById('om-list');
+    btn.disabled = true;
+    btn.textContent = '조회 중...';
+    statusEl.style.display = 'block';
+    statusEl.textContent = 'OMS에서 메모 조회 중...';
+    listEl.innerHTML = '';
+
+    fetch('http://localhost:7777/api/order-memos')
+      .then(function(r){ return r.json(); })
+      .then(function(res){
+        btn.disabled = false;
+        btn.textContent = '불러오기';
+        if(!res.ok){
+          statusEl.textContent = '오류: ' + res.msg;
+          return;
+        }
+        _data = res.orders || [];
+        var now = new Date().toLocaleString('ko-KR');
+        document.getElementById('om-updated').textContent = '업데이트: ' + now;
+        if(_data.length === 0){
+          statusEl.textContent = '메모가 있는 주문이 없습니다.';
+        } else {
+          statusEl.style.display = 'none';
+          omRender();
+        }
+      })
+      .catch(function(e){
+        btn.disabled = false;
+        btn.textContent = '불러오기';
+        statusEl.textContent = '프록시 연결 오류 (proxy.py 실행 확인)';
+      });
+  };
+
+  window.omRender = function(){
+    var listEl = document.getElementById('om-list');
+    var statusEl = document.getElementById('om-status');
+    var q = (document.getElementById('om-srch').value || '').toLowerCase();
+    var undoneOnly = document.getElementById('om-undoneOnly').checked;
+
+    var rows = _data.filter(function(o){
+      if(undoneOnly){
+        var hasUndone = o.memos.some(function(m){ return m.isDone !== 'Y'; });
+        if(!hasUndone) return false;
+      }
+      if(!q) return true;
+      return (o.orderNo + o.orderer + o.memos.map(function(m){ return m.memo; }).join(' ')).toLowerCase().indexOf(q) >= 0;
+    });
+
+    if(rows.length === 0){
+      statusEl.style.display = 'block';
+      statusEl.textContent = '검색 결과가 없습니다.';
+      listEl.innerHTML = '';
+      return;
+    }
+    statusEl.style.display = 'none';
+
+    listEl.innerHTML = rows.map(function(o){
+      var sc = STATUS_COLOR[o.status] || '#888';
+      var memosHtml = o.memos.map(function(m){
+        var done = m.isDone === 'Y';
+        return '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border);opacity:'+(done?'0.45':'1')+'">'
+          + '<div style="flex:1">'
+          + '<div style="font-size:13px;white-space:pre-wrap;word-break:break-all;color:var(--text)">' + _esc(m.memo) + '</div>'
+          + '<div style="font-size:11px;color:var(--text2);margin-top:4px">' + _esc(m.author) + ' · ' + _esc(m.time) + '</div>'
+          + '</div>'
+          + '<span style="font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap;'+(done?'background:#dcfce7;color:#2e7d52':'background:#fef3c7;color:#92400e')+'">'+(done?'완료':'처리중')+'</span>'
+          + '</div>';
+      }).join('');
+      return '<div class="card" style="padding:16px">'
+        + '<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap">'
+        + '<span style="font-size:13px;font-weight:700;color:var(--text)">' + _esc(o.orderNo) + '</span>'
+        + '<span style="font-size:12px;color:var(--text2)">' + _esc(o.orderDate) + '</span>'
+        + '<span style="font-size:12px;color:var(--text2)">' + _esc(o.orderer) + '</span>'
+        + '<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:'+sc+'22;color:'+sc+'">' + _esc(o.status) + '</span>'
+        + '<span style="font-size:11px;color:var(--text2)">' + _esc(o.channel) + '</span>'
+        + '</div>'
+        + '<div>' + memosHtml + '</div>'
+        + '</div>';
+    }).join('');
+  };
+
+  function _esc(s){
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
 })();
 </script>
