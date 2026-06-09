@@ -20,6 +20,21 @@ def get_conn():
 def init_db():
     with get_conn() as conn:
         conn.executescript("""
+        CREATE TABLE IF NOT EXISTS product_sales (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_no     TEXT,
+            order_date   TEXT,
+            year         INTEGER,
+            month        INTEGER,
+            yearmonth    TEXT,
+            product      TEXT,
+            product_code TEXT,
+            option_name  TEXT,
+            qty          INTEGER DEFAULT 1,
+            price        INTEGER DEFAULT 0,
+            status       TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS daily_stats (
             date TEXT PRIMARY KEY,
             spend REAL DEFAULT 0,
@@ -78,6 +93,45 @@ def init_db():
             optimization_suggestions TEXT
         );
         """)
+
+
+def save_product_sales(orders: list):
+    """OMS 주문 데이터를 product_sales에 저장 (날짜 단위 갱신)"""
+    import re as _re
+    if not orders:
+        return
+    dates = {o.get("orderDate", "")[:10] for o in orders if o.get("orderDate")}
+    with get_conn() as conn:
+        for d in dates:
+            conn.execute("DELETE FROM product_sales WHERE order_date = ? AND status != ''", (d,))
+        rows = []
+        for o in orders:
+            order_date = (o.get("orderDate") or "")[:10]
+            try:
+                from datetime import datetime as _dt
+                d = _dt.strptime(order_date, "%Y-%m-%d")
+                year, month, yearmonth = d.year, d.month, d.strftime("%Y-%m")
+            except Exception:
+                year, month, yearmonth = None, None, None
+            product = o.get("prodName", "")
+            m = _re.search(r'\[([A-Z]{2,}[\d\w]*)\]', product)
+            product_code = m.group(1) if m else ""
+            rows.append((
+                o.get("orderNo", ""), order_date or None,
+                year, month, yearmonth,
+                product, product_code,
+                o.get("option", ""),
+                int(o.get("qty", 1)),
+                int(o.get("itemPrice", 0)),
+                o.get("status", ""),
+            ))
+        conn.executemany(
+            """INSERT INTO product_sales
+               (order_no,order_date,year,month,yearmonth,product,product_code,
+                option_name,qty,price,status)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            rows,
+        )
 
 
 def save_daily_stats(date, account, imweb, helpers):

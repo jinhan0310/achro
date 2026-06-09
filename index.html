@@ -1035,8 +1035,8 @@ select option { background: #fff; }
           <input type="text" id="vled-search" placeholder="거래처 검색..." oninput="filterVendorList()" style="width:180px;padding:7px 10px;border:1px solid var(--border2);border-radius:7px;font-size:12px;font-family:inherit;" autocomplete="off">
           <select id="vled-vendor" size="1" style="display:none;"></select>
         </div>
-        <button class="btn btn-dark btn-sm" onclick="openMinusModal('minus')">－ 마이너스 등록</button>
-        <button class="btn btn-sm" style="background:#2e7d52;color:#fff;border:none;" onclick="openMinusModal('plus')">＋ 플러스 등록</button>
+        <button class="btn btn-dark btn-sm" onclick="openMinusModal('minus', document.getElementById('vled-search').value.trim())">－ 마이너스 등록</button>
+        <button class="btn btn-sm" style="background:#2e7d52;color:#fff;border:none;" onclick="openMinusModal('plus', document.getElementById('vled-search').value.trim())">＋ 플러스 등록</button>
         <button class="btn btn-outline btn-sm" onclick="renderVendorLedger()">새로고침</button>
         <button class="btn btn-outline btn-sm" onclick="openMergeModal()">거래처 통합</button>
         <button class="btn btn-outline btn-sm" onclick="dlSettleExcel()" style="white-space:nowrap;">⬇ 엑셀 다운로드</button>
@@ -2097,6 +2097,7 @@ function mergeVendor(fromName, toName) {
 
 
 function openKpiModal(type) {
+  window._kpiCurrentType = type;
   var txs = loadTx();
   var minus = loadMinus();
   var payments = (typeof loadPayments === 'function' ? loadPayments() : []);
@@ -2119,7 +2120,6 @@ function openKpiModal(type) {
     if (m.date === today) mMap[m.vendor].todayMinus += m.amount;
   });
 
-  // 입고·마이너스·입금 전체 업체 합산 (KPI 카드와 동일한 범위)
   var allVendors = {};
   Object.keys(vMap).forEach(function(v) { allVendors[v] = true; });
   Object.keys(mMap).forEach(function(v) { allVendors[v] = true; });
@@ -2127,7 +2127,7 @@ function openKpiModal(type) {
 
   var vendors = Object.keys(allVendors).sort(function(a, b) { return a.localeCompare(b, 'ko'); });
 
-  var rows = vendors.map(function(v) {
+  var rows = vendors.map(function(v, idx) {
     var vd = vMap[v] || { prevIn: 0, todayIn: 0 };
     var md = mMap[v] || { prevMinus: 0, todayMinus: 0 };
     var isVat = vatVendors.indexOf(v) >= 0;
@@ -2136,9 +2136,21 @@ function openKpiModal(type) {
     var todayPay = pays.filter(function(p) { return p.date === today; }).reduce(function(s, p) { return s + p.amount; }, 0);
     var 전잔 = vd.prevIn - md.prevMinus - prevPay;
     var 최종잔 = 전잔 + vd.todayIn - md.todayMinus - todayPay;
-
     var val = type === 'prev' ? 전잔 : type === 'today' ? vd.todayIn - md.todayMinus : 최종잔;
-    return { vendor: v, val: val };
+
+    var vendorTxs = [];
+    var vendorMinus = [];
+    if (type === 'today') {
+      vendorTxs = txs.filter(function(t){ return t.type==='in' && t.vendor===v && t.date===today; });
+      vendorMinus = minus.filter(function(m){ return m.vendor===v && m.date===today; });
+    } else if (type === 'prev') {
+      vendorTxs = txs.filter(function(t){ return t.type==='in' && t.vendor===v && t.date<today; });
+    } else {
+      vendorTxs = txs.filter(function(t){ return t.type==='in' && t.vendor===v; });
+      vendorMinus = minus.filter(function(m){ return m.vendor===v; });
+    }
+
+    return { vendor: v, val: val, txs: vendorTxs, minus: vendorMinus, key: 'k'+idx };
   }).filter(function(r) { return r.val !== 0; })
     .sort(function(a, b) { return b.val - a.val; });
 
@@ -2148,17 +2160,79 @@ function openKpiModal(type) {
   document.getElementById('kpi-modal-col-header').textContent = colHeaders[type] || '';
 
   var total = rows.reduce(function(s, r) { return s + r.val; }, 0);
-  var html = rows.map(function(r) {
+  var html = '';
+  rows.forEach(function(r) {
     var color = r.val < 0 ? 'color:#e53e3e;' : '';
-    return '<tr style="border-bottom:1px solid #f0ece8;">'
-      + '<td style="padding:10px 16px;color:#1a1814;">' + r.vendor + '</td>'
-      + '<td style="padding:10px 16px;text-align:right;font-family:\'DM Mono\',monospace;font-weight:500;' + color + '">₩' + fmt(r.val) + '</td>'
+    var hasDetails = r.txs.length > 0 || r.minus.length > 0;
+    html += '<tr class="kpi-vrow" data-kpi-key="'+r.key+'" style="border-bottom:1px solid #f0ece8;background:#fafaf8;cursor:'+(hasDetails?'pointer':'default')+';">'
+      + '<td style="padding:10px 16px;color:#1a1814;font-weight:600;">'
+      + (hasDetails ? '<span id="kpi-arr-'+r.key+'" style="display:inline-block;font-size:9px;margin-right:4px;transition:transform .15s;">▶</span>' : '<span style="display:inline-block;width:17px;"></span>')
+      + r.vendor + '</td>'
+      + '<td style="padding:10px 16px;text-align:right;font-family:\'DM Mono\',monospace;font-weight:500;'+color+'">₩'+fmt(r.val)+'</td>'
+      + '<td style="padding:10px 8px;"></td>'
       + '</tr>';
-  }).join('');
-  document.getElementById('kpi-modal-body').innerHTML = html || '<tr><td colspan="2" style="padding:24px;text-align:center;color:#aaa;">데이터 없음</td></tr>';
+    if (hasDetails) {
+      r.txs.forEach(function(tx) {
+        var label = tx.vname || tx.name || tx.code || '';
+        var opt = [tx.color, tx.size].filter(Boolean).join('/');
+        var desc = [tx.date, label+(opt?'('+opt+')':''), tx.qty?'×'+tx.qty:''].filter(Boolean).join(' · ');
+        html += '<tr class="kpi-drow" data-kpi-key="'+r.key+'" style="display:none;border-bottom:1px solid #f0ece8;background:#fff;">'
+          + '<td style="padding:5px 16px 5px 30px;font-size:11px;color:#555;">'+desc+'</td>'
+          + '<td style="padding:5px 16px;text-align:right;font-size:12px;font-family:\'DM Mono\',monospace;">₩'+fmt(tx.amount)+'</td>'
+          + '<td style="padding:5px 8px;text-align:center;"><button class="kpi-del-tx" data-txid="'+tx.id+'" style="background:none;border:none;cursor:pointer;color:#ccc;font-size:11px;padding:2px 5px;line-height:1;" title="삭제">✕</button></td>'
+          + '</tr>';
+      });
+      r.minus.forEach(function(m) {
+        var isP = m.amount < 0;
+        var desc = m.date+' · ['+m.type+']'+(m.memo?' '+m.memo:'');
+        html += '<tr class="kpi-drow" data-kpi-key="'+r.key+'" style="display:none;border-bottom:1px solid #f0ece8;background:#fff8f2;">'
+          + '<td style="padding:5px 16px 5px 30px;font-size:11px;color:'+(isP?'#2e7d52':'#e53e3e')+';">'+desc+'</td>'
+          + '<td style="padding:5px 16px;text-align:right;font-size:12px;font-family:\'DM Mono\',monospace;color:'+(isP?'#2e7d52':'#e53e3e')+'">'+(isP?'+':'−')+'₩'+fmt(Math.abs(m.amount))+'</td>'
+          + '<td style="padding:5px 8px;text-align:center;"><button class="kpi-del-minus" data-minid="'+m.id+'" style="background:none;border:none;cursor:pointer;color:#ccc;font-size:11px;padding:2px 5px;line-height:1;" title="삭제">✕</button></td>'
+          + '</tr>';
+      });
+    }
+  });
+
+  var tbody = document.getElementById('kpi-modal-body');
+  tbody.innerHTML = html || '<tr><td colspan="3" style="padding:24px;text-align:center;color:#aaa;">데이터 없음</td></tr>';
   document.getElementById('kpi-modal-count').textContent = rows.length + '개 거래처';
   document.getElementById('kpi-modal-total').textContent = '합계 ₩' + fmt(total);
   document.getElementById('kpi-modal-bg').style.display = 'flex';
+
+  tbody.onclick = function(e) {
+    var delTx = e.target.closest('.kpi-del-tx');
+    if (delTx) {
+      e.stopPropagation();
+      customConfirm('이 입고 내역을 삭제하시겠습니까?', function() {
+        var txId = delTx.dataset.txid;
+        saveTx(loadTx().filter(function(t){ return String(t.id) !== String(txId); }));
+        openKpiModal(type);
+        renderVendorLedger();
+      });
+      return;
+    }
+    var delMinus = e.target.closest('.kpi-del-minus');
+    if (delMinus) {
+      e.stopPropagation();
+      customConfirm('이 항목을 삭제하시겠습니까?', function() {
+        saveMinus(loadMinus().filter(function(m){ return m.id !== delMinus.dataset.minid; }));
+        openKpiModal(type);
+        renderVendorLedger();
+      });
+      return;
+    }
+    var vrow = e.target.closest('.kpi-vrow');
+    if (vrow) {
+      var key = vrow.dataset.kpiKey;
+      var detailRows = tbody.querySelectorAll('.kpi-drow[data-kpi-key="'+key+'"]');
+      if (!detailRows.length) return;
+      var isOpen = detailRows[0].style.display !== 'none';
+      detailRows.forEach(function(r){ r.style.display = isOpen ? 'none' : ''; });
+      var arr = document.getElementById('kpi-arr-'+key);
+      if (arr) arr.style.transform = isOpen ? '' : 'rotate(90deg)';
+    }
+  };
 }
 function closeKpiModal() {
   document.getElementById('kpi-modal-bg').style.display = 'none';
@@ -2304,8 +2378,8 @@ function renderVendorLedger(searchQ) {
     var todayPay = pays.filter(function(p){ return p.date === today; }).reduce(function(s,p){ return s+p.amount; },0);
     var 전잔    = prevIn - prevMinus - prevPay;
     var todayInV = isVat ? Math.round(todayIn*1.1) : todayIn;
-    var 당잔    = todayInV - todayMinus - todayPay;
-    var 최종잔  = 전잔 + 당잔;
+    var 당잔    = todayInV;
+    var 최종잔  = 전잔 + todayInV - todayMinus - todayPay;
     var 실잔    = 최종잔;
     var isComplete = 최종잔 <= 0;
 
@@ -2487,7 +2561,7 @@ function renderVendorLedger(searchQ) {
 }
 
 
-function openMinusModal(mode) {
+function openMinusModal(mode, prefillVendor) {
   var isPlus = (mode === 'plus');
   document.getElementById('minus-modal-title').textContent = isPlus ? '플러스 항목 등록' : '마이너스 항목 등록';
   document.getElementById('minus-mode').value = isPlus ? 'plus' : 'minus';
@@ -2500,11 +2574,12 @@ function openMinusModal(mode) {
     .sort(function(a,b){ return a.localeCompare(b,'ko'); });
   var dl = document.getElementById('minus-vendor-list');
   if (dl) dl.innerHTML = vendors.map(function(v){ return '<option value="'+v+'">'; }).join('');
-  document.getElementById('minus-vendor').value = '';
+  document.getElementById('minus-vendor').value = prefillVendor || '';
   document.getElementById('minus-amount').value = '';
   document.getElementById('minus-memo').value   = '';
   document.getElementById('minus-modal-bg').style.display = 'flex';
-  setTimeout(function(){ document.getElementById('minus-amount').focus(); }, 50);
+  var focusEl = prefillVendor ? 'minus-amount' : 'minus-vendor';
+  setTimeout(function(){ document.getElementById(focusEl).focus(); }, 50);
 }
 function closeMinusModal() {
   document.getElementById('minus-modal-bg').style.display = 'none';
@@ -3255,6 +3330,7 @@ window.addEventListener('DOMContentLoaded', function() {
         <thead><tr style="position:sticky;top:0;background:#f7f5f2;">
           <th style="padding:10px 16px;text-align:left;font-weight:600;color:#888;border-bottom:1px solid #e2ddd8;">거래처</th>
           <th style="padding:10px 16px;text-align:right;font-weight:600;color:#888;border-bottom:1px solid #e2ddd8;" id="kpi-modal-col-header"></th>
+          <th style="padding:10px 8px;width:28px;border-bottom:1px solid #e2ddd8;"></th>
         </tr></thead>
         <tbody id="kpi-modal-body"></tbody>
       </table>
@@ -4743,10 +4819,22 @@ async function imwebResolveBase() {
 async function imwebGetToken(base) {
   var cached = null;
   try {
-    cached = localStorage.getItem('imweb_token');
-    // 구버전 JSON 형식({token,exp}) 잔존 시 무효화
-    if (cached && cached.startsWith('{')) { cached = null; localStorage.removeItem('imweb_token'); }
-  } catch(e) {}
+    var raw = localStorage.getItem('imweb_token');
+    if (raw) {
+      // 만료시간 포함 JSON 형식 {"t":"...","e":timestamp}
+      if (raw.startsWith('{"t":')) {
+        var obj = JSON.parse(raw);
+        if (obj.e && obj.e > Date.now()) cached = obj.t; // 아직 유효
+        else localStorage.removeItem('imweb_token');     // 만료 → 재발급
+      } else if (!raw.startsWith('{')) {
+        // 구버전 raw 문자열 토큰 — 그냥 사용 (만료 불명)
+        cached = raw;
+      } else {
+        // 알 수 없는 JSON 형식 → 폐기
+        localStorage.removeItem('imweb_token');
+      }
+    }
+  } catch(e) { localStorage.removeItem('imweb_token'); }
   if (cached) return cached;
   // 프록시 경유로 토큰 발급
   var res = await fetch(base + '/auth', {
@@ -4756,7 +4844,8 @@ async function imwebGetToken(base) {
   });
   var data = await res.json();
   if (data.code !== 200) throw new Error('인증 실패: ' + data.msg);
-  localStorage.setItem('imweb_token', data.access_token);
+  // 50분 후 만료 (아임웹 토큰 유효기간 ~1시간)
+  localStorage.setItem('imweb_token', JSON.stringify({t: data.access_token, e: Date.now() + 50*60*1000}));
   return data.access_token;
 }
 
@@ -4768,129 +4857,64 @@ async function imwebFetchOrders() {
   try {
     // 1. 프록시 확인
     stEl.textContent = '프록시 확인 중...';
-    var apiBase = await imwebResolveBase();
-    if (!apiBase) {
+    var proxyBase = 'http://localhost:7777';
+    var ctrl = new AbortController();
+    var tid = setTimeout(function(){ ctrl.abort(); }, 1500);
+    try {
+      await fetch(proxyBase + '/ping', {signal: ctrl.signal});
+      clearTimeout(tid);
+    } catch(e) {
       throw new Error('프록시 미실행\n\n【해결방법】\n같은 폴더의 "아임웹프록시실행.bat"을\n더블클릭하여 실행 후 다시 시도하세요.');
     }
 
-    // 2. 토큰 발급
-    stEl.textContent = '아임웹 인증 중...';
-    var token = await imwebGetToken(apiBase);
+    // 2. OMS 배송대기 직접 조회 (빠름 — 배송대기만 바로 반환)
+    stEl.textContent = '배송대기 주문 조회 중...';
+    var omsRes = await fetch(proxyBase + '/api/delivery-waiting');
+    var omsData = await omsRes.json();
 
-    // 3. 최근 30일 범위 조회 (배송대기 주문이 오래된 경우 대비)
-    var now = Math.floor(Date.now() / 1000);
-    var fromTs = now - 30 * 24 * 60 * 60;
-    var allOrders = [], page = 1, limit = 100;
-    var batchSize = 100;
-    var delay = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
-    var imwebFetch = async function(url) {
-      var r = await fetch(url, {headers: {'access-token': token}});
-      var d = await r.json();
-      if (d.code === -5) { // 토큰 만료
-        localStorage.removeItem('imweb_token');
-        token = await imwebGetToken(apiBase);
-        r = await fetch(url, {headers: {'access-token': token}});
-        d = await r.json();
-      }
-      if (d.msg && d.msg.toUpperCase().includes('TOO MANY')) {
-        // 60초 대기 후 자동 재시도
-        for (var sec = 60; sec > 0; sec--) {
-          stEl.textContent = '요청 한도 초과 — ' + sec + '초 후 자동 재시도...';
-          await new Promise(function(res){ setTimeout(res, 1000); });
-        }
-        r = await fetch(url, {headers: {'access-token': token}});
-        d = await r.json();
-        if (d.msg && d.msg.toUpperCase().includes('TOO MANY'))
-          throw new Error('요청 한도가 아직 초과 상태입니다. 잠시 후 다시 눌러주세요.');
-      }
-      return d;
-    };
-    while (true) {
-      if (page > 1) await delay(2500);
-      stEl.textContent = '주문 목록 수집 중 (최근 30일) — ' + allOrders.length + '건 확인됨';
-      var listData = await imwebFetch(
-        apiBase + '/shop/orders?limit=' + limit + '&page=' + page +
-        '&order_time_from=' + fromTs
-      );
-      if (listData.code !== 200) throw new Error('주문 목록 오류: ' + listData.msg);
-      var list = listData.data.list || [];
-      list.forEach(function(o) { allOrders.push(o); });
-      if (list.length < limit) break;
-      page++;
+    if (!omsData.ok) {
+      throw new Error(omsData.msg || 'OMS 조회 실패');
     }
 
-    if (!allOrders.length) {
-      stEl.textContent = '해당 날짜 주문이 없습니다.';
+    var rawItems = omsData.items || [];
+    if (!rawItems.length) {
+      stEl.textContent = '배송대기 주문이 없습니다.';
       return;
     }
 
-    // ordererMap, orderTimeMap 구성
-    var ordererMap = {}, orderTimeMap = {};
-    allOrders.forEach(function(o) {
-      ordererMap[o.order_no]   = o.orderer ? o.orderer.name : '';
-      orderTimeMap[o.order_no] = o.order_time || 0;
-    });
-    var allNos = allOrders.map(function(o) { return o.order_no; });
+    // OMS 데이터 → ocOrders 형식으로 변환
+    var allItems = rawItems.map(function(item) {
+      var prodName = item.prodName || '';
+      var codeMatch = prodName.match(/\[([A-Z0-9]+)\]/);
+      var code = codeMatch ? codeMatch[1] : '';
+      var cleanName = prodName.replace(/\[.*?\]/g, '').trim();
 
-    // 5. 주문상품 배치 조회 — 배송대기 필터
-    var allItems = [];
-    for (var i = 0; i < allNos.length; i += batchSize) {
-      if (i > 0) await delay(2500);
-      var batch = allNos.slice(i, i + batchSize);
-      stEl.textContent = '배송대기 확인 중... (' + Math.min(i + batchSize, allNos.length) + '/' + allNos.length + '건) 배송대기 ' + allItems.length + '건 발견';
-      var qs = batch.map(function(n) { return 'order_no[]=' + n; }).join('&');
-      var prodData = await imwebFetch(apiBase + '/shop/prod-orders?' + qs);
-      if (prodData.code !== 200) continue;
-
-      for (var orderNo in prodData.data) {
-        var prodGroups = prodData.data[orderNo];
-        var orderer   = ordererMap[orderNo] || '';
-        var orderTime = orderTimeMap[orderNo] || 0;
-        var orderDateStr = orderTime
-          ? new Date(orderTime * 1000).toLocaleString('ko-KR')
-          : '';
-        for (var pgKey in prodGroups) {
-          var pg = prodGroups[pgKey];
-          if (pg.status !== 'STANDBY') continue;  // 배송대기만
-          var items = (pg.items || []);
-          items.forEach(function(item) {
-            var prodName = item.prod_name || '';
-            var codeMatch = prodName.match(/\[([A-Z0-9]+)\]/);
-            var code = codeMatch ? codeMatch[1] : '';
-            var cleanName = prodName.replace(/\[.*?\]/g, '').trim();
-            var color = '', size = '';
-            (item.options || []).forEach(function(optGroup) {
-              optGroup.forEach(function(opt) {
-                var names = opt.option_name_list || [];
-                var vals  = opt.value_name_list  || [];
-                names.forEach(function(n, idx) {
-                  var v = vals[idx] || '';
-                  if (/color/i.test(n) || /색/.test(n)) color = v;
-                  else if (/size/i.test(n) || /사이즈/.test(n)) size = v;
-                });
-              });
-            });
-            var qty = (item.payment || {}).count || 1;
-            allItems.push({
-              주문번호: orderNo,
-              상품명: cleanName,
-              품번: ocNormCode(code),
-              컬러: normalizeColor(color) || '미지정',
-              사이즈: size || 'FREE',
-              수량: qty,
-              수령자: orderer,
-              주문일: orderDateStr,
-              isKodiOpt: false,
-              kodiOptStr: ''
-            });
-          });
+      // 옵션에서 컬러/사이즈 파싱 (예: "Color:Black, Size:M")
+      var color = '', size = '';
+      (item.option || '').split(',').forEach(function(part) {
+        var kv = part.trim().split(':');
+        if (kv.length >= 2) {
+          var k = kv[0].trim().toLowerCase();
+          var v = kv.slice(1).join(':').trim();
+          if (/color|colour|컬러|색/.test(k)) color = v;
+          else if (/size|사이즈/.test(k))      size  = v;
         }
-      }
-    }
+      });
 
-    if (!allItems.length) { stEl.textContent = '상품 데이터가 없습니다.'; return; }
+      return {
+        주문번호: item.orderNo,
+        상품명: cleanName,
+        품번: ocNormCode(code),
+        컬러: normalizeColor(color) || '미지정',
+        사이즈: size || 'FREE',
+        수량: item.qty || 1,
+        수령자: item.receiver || item.orderer || '',
+        주문일: item.orderDate || '',
+        isKodiOpt: false,
+        kodiOptStr: ''
+      };
+    });
 
-    // 5. ocOrders 설정 후 UI 갱신
     ocOrders = allItems;
     ocOrderDate = new Date().toLocaleDateString('ko-KR');
     document.getElementById('oc-dropA').style.borderColor = 'var(--green)';

@@ -14,16 +14,91 @@ from pathlib import Path
 from datetime import datetime
 from collections import defaultdict
 from dotenv import load_dotenv
+from urllib.parse import urlencode, parse_qs, urlparse
 
 load_dotenv()
 API_KEY    = os.getenv('IMWEB_API_KEY', '')
 SECRET_KEY = os.getenv('IMWEB_SECRET_KEY', '')
 IMWEB_BASE = 'https://api.imweb.me'
+OMS_BASE   = 'https://api.oms.imweb.me/admin/v1'
 DB         = Path(__file__).parent / 'jarvis' / 'jarvis.db'
+_TOKEN_CACHE = Path(__file__).parent / '.oms_token.json'
+TAB_DELIVERY_WAIT = 't202407045444dde9a5ed1'
 
 # 업데이트 진행 상태 (동시 실행 방지)
 _update_lock   = threading.Lock()
 _update_status = {'running': False, 'progress': '', 'last_done': '', 'last_error': ''}
+
+
+# ── OMS 배송대기 API ────────────────────────────────────────────────
+def _oms_load_token():
+    try:
+        if _TOKEN_CACHE.exists():
+            data = json.loads(_TOKEN_CACHE.read_text(encoding='utf-8'))
+            if data.get('expires', 0) > time.time():
+                return data['token']
+    except Exception:
+        pass
+    return None
+
+def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
+    token = _oms_load_token()
+    if not token:
+        return None, 'OMS 토큰 없음 — check_delivery.py를 먼저 한 번 실행하세요.'
+
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Accept': 'application/json',
+        'Referer': 'https://app.oms.imweb.me/',
+    }
+
+    all_items, page = [], 1
+    while True:
+        params = {'page': page, 'sort': 'wtime', 'tabCode': TAB_DELIVERY_WAIT}
+        if date_from:
+            params['orderDateFrom'] = f'{date_from}T00:00:00.000Z'
+        if date_to:
+            params['orderDateTo']   = f'{date_to}T23:59:59.000Z'
+
+        url = OMS_BASE + '/order?' + urlencode(params)
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                body = json.loads(r.read())
+        except Exception as e:
+            return None, f'OMS API 오류: {e}'
+
+        orders = body.get('data', {}).get('list', [])
+        if not orders:
+            break
+
+        for order in orders:
+            for section in order.get('orderSectionList', []):
+                for item in section.get('orderSectionItemList', []):
+                    opts = ', '.join(
+                        f"{o['key']}:{o['value']}"
+                        for o in (item.get('optionInfo') or [])
+                    )
+                    all_items.append({
+                        'orderNo':   str(order['orderNo']),
+                        'orderDate': order['orderDate'][:10],
+                        'orderer':   order.get('ordererName', ''),
+                        'receiver':  order.get('receiverName', ''),
+                        'phone':     order.get('receiverPhone', ''),
+                        'prodName':  item.get('prodName', ''),
+                        'option':    opts,
+                        'qty':       item.get('qty', 1),
+                        'itemPrice': item.get('itemPrice', 0),
+                        'channel':   order.get('saleChannelName', ''),
+                    })
+
+        pagination  = body.get('data', {}).get('pagenation', {})
+        total_pages = pagination.get('totalPage', 1)
+        if page >= total_pages:
+            break
+        page += 1
+
+    return all_items, None
 
 # ── 아임웹 API 헬퍼 ─────────────────────────────────────────────────
 def _get_token():
@@ -214,6 +289,16 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
         if self.path == '/api/customers/status':
             return self._json(200, _update_status)
+
+        if self.path.startswith('/api/delivery-waiting'):
+            parsed = urlparse(self.path)
+            qs     = parse_qs(parsed.query)
+            date_from = qs.get('from', [None])[0]
+            date_to   = qs.get('to',   [None])[0]
+            items, err = _oms_fetch_delivery_waiting(date_from, date_to)
+            if err:
+                return self._json(200, {'ok': False, 'msg': err})
+            return self._json(200, {'ok': True, 'items': items, 'count': len(items)})
 
         self._proxy('GET')
 
