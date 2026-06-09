@@ -130,6 +130,9 @@ def _oms_fetch_order_memos():
         'OSS04': '배송완료', 'OSS05': '구매확정', 'OSS06': '취소',
         'OSS07': '교환', 'OSS08': '반품', 'OSS09': '환불',
         'PARTIAL_SHIPPED': '부분배송',
+        'SHIPPED': '배송중',
+        'PARTIAL_CANCEL': '부분취소',
+        'PARTIAL_EXCHANGE': '부분교환',
     }
 
     result = []
