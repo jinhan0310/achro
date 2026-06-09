@@ -3833,10 +3833,6 @@ function renderVendorHistTable() {
         <div style="font-size:15px;font-weight:700;margin-bottom:6px">주문 내역</div>
         <div style="font-size:12px;color:var(--text2);margin-bottom:12px">imweb 주문 엑셀 파일<br>(.xlsx / .xls)</div>
         <button class="btn btn-outline" style="font-size:12px" onclick="event.stopPropagation();document.getElementById('oc-fileA').click()">파일 선택</button>
-        <div style="margin:12px 0;display:flex;align-items:center;gap:8px;"><hr style="flex:1;border:none;border-top:1px solid var(--border);"><span style="font-size:11px;color:var(--text3);white-space:nowrap;">또는</span><hr style="flex:1;border:none;border-top:1px solid var(--border);"></div>
-        <div onclick="event.stopPropagation()">
-          <button id="imweb-btn" class="btn btn-dark" style="font-size:12px;padding:7px 16px;white-space:nowrap;" onclick="event.stopPropagation();imwebFetchOrders()">아임웹 불러오기 (배송대기)</button>
-        </div>
         <div style="margin-top:10px;font-size:12px;color:var(--text2);min-height:18px" id="oc-stA">파일을 드래그하거나 버튼을 눌러주세요</div>
       </div>
       <div style="border:2px dashed var(--border);border-radius:12px;padding:24px 16px;text-align:center;cursor:pointer;background:var(--surface);transition:border-color .2s" id="oc-dropB"
@@ -4872,89 +4868,6 @@ async function imwebGetToken(base) {
   // 50분 후 만료 (아임웹 토큰 유효기간 ~1시간)
   localStorage.setItem('imweb_token', JSON.stringify({t: data.access_token, e: Date.now() + 50*60*1000}));
   return data.access_token;
-}
-
-async function imwebFetchOrders() {
-  var btn  = document.getElementById('imweb-btn');
-  var stEl = document.getElementById('oc-stA');
-  btn.disabled = true;
-  btn.textContent = '불러오는 중...';
-  try {
-    // 1. 프록시 확인
-    stEl.textContent = '프록시 확인 중...';
-    var proxyBase = 'http://localhost:7777';
-    var ctrl = new AbortController();
-    var tid = setTimeout(function(){ ctrl.abort(); }, 1500);
-    try {
-      await fetch(proxyBase + '/ping', {signal: ctrl.signal});
-      clearTimeout(tid);
-    } catch(e) {
-      throw new Error('프록시 미실행\n\n【해결방법】\n같은 폴더의 "아임웹프록시실행.bat"을\n더블클릭하여 실행 후 다시 시도하세요.');
-    }
-
-    // 2. OMS 배송대기 직접 조회 (빠름 — 배송대기만 바로 반환)
-    stEl.textContent = '배송대기 주문 조회 중...';
-    var omsRes = await fetch(proxyBase + '/api/delivery-waiting');
-    var omsData = await omsRes.json();
-
-    if (!omsData.ok) {
-      throw new Error(omsData.msg || 'OMS 조회 실패');
-    }
-
-    var rawItems = omsData.items || [];
-    if (!rawItems.length) {
-      stEl.textContent = '배송대기 주문이 없습니다.';
-      return;
-    }
-
-    // OMS 데이터 → ocOrders 형식으로 변환
-    var allItems = rawItems.map(function(item) {
-      var prodName = item.prodName || '';
-      var codeMatch = prodName.match(/\[([A-Z0-9]+)\]/);
-      var code = codeMatch ? codeMatch[1] : '';
-      var cleanName = prodName.replace(/\[.*?\]/g, '').trim();
-
-      // 옵션에서 컬러/사이즈 파싱 (예: "Color:Black, Size:M")
-      var color = '', size = '';
-      (item.option || '').split(',').forEach(function(part) {
-        var kv = part.trim().split(':');
-        if (kv.length >= 2) {
-          var k = kv[0].trim().toLowerCase();
-          var v = kv.slice(1).join(':').trim();
-          if (/color|colour|컬러|색/.test(k)) color = v;
-          else if (/size|사이즈/.test(k))      size  = v;
-        }
-      });
-
-      return {
-        주문번호: item.orderNo,
-        상품명: cleanName,
-        품번: ocNormCode(code),
-        컬러: normalizeColor(color) || '미지정',
-        사이즈: size || 'FREE',
-        수량: item.qty || 1,
-        수령자: item.receiver || item.orderer || '',
-        주문일: item.orderDate || '',
-        isKodiOpt: false,
-        kodiOptStr: ''
-      };
-    });
-
-    ocOrders = allItems;
-    ocOrderDate = new Date().toLocaleDateString('ko-KR');
-    var uOrderCnt = new Set(rawItems.map(function(i){ return i.orderNo; })).size;
-    document.getElementById('oc-dropA').style.borderColor = 'var(--green)';
-    ocSetStA('✓ 아임웹 배송대기 ' + uOrderCnt + '건');
-    ocSetChip('oc-chipO', '배송대기 ' + uOrderCnt + '건', '#052e16', 'var(--green)');
-    ocCheckReady();
-
-  } catch(e) {
-    alert('아임웹 불러오기 실패: ' + e.message);
-    stEl.textContent = '불러오기 실패. 다시 시도해주세요.';
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '아임웹 불러오기';
-  }
 }
 
 
