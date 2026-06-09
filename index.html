@@ -4957,20 +4957,37 @@ async function imwebFetchOrders() {
 }
 
 
+function ocColVal(r, keys) {
+  var rKeys = Object.keys(r);
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    if (r[k] !== undefined && r[k] !== '') return r[k];
+    // 공백/대소문자 무시 매칭
+    var norm = k.replace(/\s/g,'').toLowerCase();
+    for (var j = 0; j < rKeys.length; j++) {
+      if (rKeys[j].replace(/\s/g,'').toLowerCase() === norm && r[rKeys[j]] !== '') return r[rKeys[j]];
+    }
+  }
+  return '';
+}
 function ocParseOrder(wb, fname) {
   var ws = wb.Sheets[wb.SheetNames[0]];
   var rows = XLSX.utils.sheet_to_json(ws, {defval:''});
   ocOrders = rows.map(function(r) {
-    var raw = String(r['상품명'] || '');
-    var optStr = String(r['옵션명'] || '').trim();
+    var raw = String(ocColVal(r, ['상품명','상품명(옵션)']) || '');
+    var optStr = String(ocColVal(r, ['옵션명','상품옵션','옵션']) || '').trim();
     var m = raw.match(/\[(.*?)\]/);
     var code = m ? m[1] : '';
     var isKodiOpt = optStr.indexOf('함께 코디된') >= 0 || optStr.indexOf('함께코디된') >= 0;
+    var orderNo = String(ocColVal(r, ['주문번호','주문 번호','주문No','주문NO','orderNo']) || '');
+    var qty = Number(ocColVal(r, ['구매수량','수량','주문수량','구매 수량'])) || 1;
+    var receiver = String(ocColVal(r, ['수령자명','수취인명','받는사람','수령인명','받는분']) || '');
+    var orderDate = ocColVal(r, ['주문일','결제일','주문일시','결제일시','주문 일자']) || '';
     return {
-      주문번호: String(r['주문번호'] || ''), 상품명: raw.replace(/\[.*?\]/, '').trim(),
+      주문번호: orderNo, 상품명: raw.replace(/\[.*?\]/, '').trim(),
       품번: ocNormCode(code), 컬러: ocGetColor(optStr), 사이즈: ocGetSize(optStr),
-      수량: Number(r['구매수량']) || 1, 수령자: String(r['수령자명'] || ''),
-      주문일: r['주문일'] ? new Date(r['주문일']).toLocaleString('ko-KR') : '',
+      수량: qty, 수령자: receiver,
+      주문일: orderDate ? new Date(orderDate).toLocaleString('ko-KR') : '',
       isKodiOpt: isKodiOpt, kodiOptStr: isKodiOpt ? optStr : ''
     };
   });
