@@ -9525,8 +9525,10 @@ function settleSwitchTab(tab) {
     }
     statusEl.style.display = 'none';
 
-    listEl.innerHTML = rows.map(function(o){
+    listEl.innerHTML = rows.map(function(o, idx){
       var sc = STATUS_COLOR[o.status] || '#888';
+      var uid = 'om-detail-' + idx;
+
       var memosHtml = o.memos.map(function(m){
         var done = m.isDone === 'Y';
         return '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border);opacity:'+(done?'0.45':'1')+'">'
@@ -9537,17 +9539,69 @@ function settleSwitchTab(tab) {
           + '<span style="font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap;'+(done?'background:#dcfce7;color:#2e7d52':'background:#fef3c7;color:#92400e')+'">'+(done?'완료':'처리중')+'</span>'
           + '</div>';
       }).join('');
+
+      var itemsHtml = (o.items || []).map(function(it){
+        var discounted = it.origPrice > it.price;
+        var imgHtml = it.image
+          ? '<img src="'+_esc(it.image)+'" style="width:48px;height:48px;object-fit:cover;border-radius:6px;flex-shrink:0" onerror="this.style.display=\'none\'">'
+          : '<div style="width:48px;height:48px;border-radius:6px;background:var(--surface2);flex-shrink:0"></div>';
+        return '<div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'
+          + imgHtml
+          + '<div style="flex:1;min-width:0">'
+          + '<div style="font-size:13px;color:var(--text);word-break:break-all">' + _esc(it.name) + '</div>'
+          + (it.option ? '<div style="font-size:11px;color:var(--text2);margin-top:2px">' + _esc(it.option) + '</div>' : '')
+          + '</div>'
+          + '<div style="text-align:right;flex-shrink:0">'
+          + '<div style="font-size:13px;font-weight:700">' + (it.price||0).toLocaleString() + '원</div>'
+          + (discounted ? '<div style="font-size:11px;color:var(--text2);text-decoration:line-through">' + (it.origPrice||0).toLocaleString() + '원</div>' : '')
+          + '<div style="font-size:11px;color:var(--text2)">' + it.qty + '개</div>'
+          + '</div>'
+          + '</div>';
+      }).join('');
+
+      var detailHtml = '<div id="'+uid+'" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">'
+        + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'
+        + '<div style="font-size:12px">'
+        + '<div style="font-weight:700;margin-bottom:6px;color:var(--text2)">주문자 / 수령자</div>'
+        + '<div>' + _esc(o.orderer) + (o.ordererCall ? ' · ' + _esc(o.ordererCall) : '') + '</div>'
+        + (o.receiver !== o.orderer ? '<div style="margin-top:2px">' + _esc(o.receiver) + (o.receiverCall ? ' · ' + _esc(o.receiverCall) : '') + '</div>' : '')
+        + '<div style="margin-top:6px;color:var(--text2)">(' + _esc(o.zipcode) + ') ' + _esc(o.address) + '</div>'
+        + (o.deliveryMemo ? '<div style="margin-top:4px;color:#f59e0b">📦 ' + _esc(o.deliveryMemo) + '</div>' : '')
+        + '</div>'
+        + '<div style="font-size:12px">'
+        + '<div style="font-weight:700;margin-bottom:6px;color:var(--text2)">결제 정보</div>'
+        + '<div style="display:flex;justify-content:space-between"><span>상품금액</span><span>' + (o.prodPrice||0).toLocaleString() + '원</span></div>'
+        + (o.deliveryFee ? '<div style="display:flex;justify-content:space-between"><span>배송비</span><span>+' + (o.deliveryFee||0).toLocaleString() + '원</span></div>' : '')
+        + (o.discountPrice ? '<div style="display:flex;justify-content:space-between"><span>할인</span><span style="color:var(--red)">-' + (o.discountPrice||0).toLocaleString() + '원</span></div>' : '')
+        + '<div style="display:flex;justify-content:space-between;font-weight:700;margin-top:4px;padding-top:4px;border-top:1px solid var(--border)"><span>총 결제</span><span>' + (o.paymentPrice||0).toLocaleString() + '원</span></div>'
+        + (o.payMethod ? '<div style="margin-top:4px;color:var(--text2)">' + _esc(o.payMethod) + '</div>' : '')
+        + '</div>'
+        + '</div>'
+        + '<div style="margin-bottom:10px"><div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px">상품 목록</div>' + itemsHtml + '</div>'
+        + '</div>';
+
       return '<div class="card" style="padding:16px">'
-        + '<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap">'
+        + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
         + '<span style="font-size:13px;font-weight:700;color:var(--text)">' + _esc(o.orderNo) + '</span>'
         + '<span style="font-size:12px;color:var(--text2)">' + _esc(o.orderDate) + '</span>'
         + '<span style="font-size:12px;color:var(--text2)">' + _esc(o.orderer) + '</span>'
         + '<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:'+sc+'22;color:'+sc+'">' + _esc(o.status) + '</span>'
         + '<span style="font-size:11px;color:var(--text2)">' + _esc(o.channel) + '</span>'
+        + '<button onclick="omToggle(\''+uid+'\')" style="margin-left:auto;font-size:11px;padding:3px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);cursor:pointer;color:var(--text2)" id="'+uid+'-btn">상세보기 ▾</button>'
         + '</div>'
-        + '<div>' + memosHtml + '</div>'
+        + detailHtml
+        + '<div style="margin-top:10px">' + memosHtml + '</div>'
         + '</div>';
     }).join('');
+  };
+
+  window.omToggle = function(uid){
+    var el = document.getElementById(uid);
+    var btn = document.getElementById(uid+'-btn');
+    if(!el) return;
+    var open = el.style.display === 'none';
+    el.style.display = open ? 'block' : 'none';
+    if(btn) btn.textContent = open ? '접기 ▴' : '상세보기 ▾';
   };
 
   function _esc(s){
