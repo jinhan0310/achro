@@ -1035,8 +1035,8 @@ select option { background: #fff; }
           <input type="text" id="vled-search" placeholder="거래처 검색..." oninput="filterVendorList()" style="width:180px;padding:7px 10px;border:1px solid var(--border2);border-radius:7px;font-size:12px;font-family:inherit;" autocomplete="off">
           <select id="vled-vendor" size="1" style="display:none;"></select>
         </div>
-        <button class="btn btn-dark btn-sm" onclick="openMinusModal('minus', document.getElementById('vled-search').value.trim())">－ 마이너스 등록</button>
-        <button class="btn btn-sm" style="background:#2e7d52;color:#fff;border:none;" onclick="openMinusModal('plus', document.getElementById('vled-search').value.trim())">＋ 플러스 등록</button>
+        <button class="btn btn-dark btn-sm" onclick="openMinusModal('minus', resolveVendorFromSearch())">－ 마이너스 등록</button>
+        <button class="btn btn-sm" style="background:#2e7d52;color:#fff;border:none;" onclick="openMinusModal('plus', resolveVendorFromSearch())">＋ 플러스 등록</button>
         <button class="btn btn-outline btn-sm" onclick="renderVendorLedger()">새로고침</button>
         <button class="btn btn-outline btn-sm" onclick="openMergeModal()">거래처 통합</button>
         <button class="btn btn-outline btn-sm" onclick="dlSettleExcel()" style="white-space:nowrap;">⬇ 엑셀 다운로드</button>
@@ -2067,6 +2067,19 @@ function switchLedgerSub(tab) {
 function filterVendorList() {
   var q = document.getElementById('vled-search').value.trim().toLowerCase();
   renderVendorLedger(q);
+}
+
+function resolveVendorFromSearch() {
+  var q = (document.getElementById('vled-search').value || '').trim();
+  if (!q) return '';
+  var txs = loadTx();
+  var allVendors = txs.filter(function(t){ return t.type==='in' && t.vendor; })
+    .map(function(t){ return t.vendor; })
+    .filter(function(v,i,a){ return a.indexOf(v)===i; });
+  if (allVendors.indexOf(q) >= 0) return q;
+  var matched = allVendors.filter(function(v){ return matchChosung(q, v); });
+  if (matched.length === 1) return matched[0];
+  return q;
 }
 
 // ── 거래처명 정규화 (공백 통일) ──
