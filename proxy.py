@@ -32,19 +32,28 @@ _update_status = {'running': False, 'progress': '', 'last_done': '', 'last_error
 
 # ── OMS 배송대기 API ────────────────────────────────────────────────
 def _oms_load_token():
+    """토큰 파일에서 로드. 로컬 만료와 무관하게 반환하고 실제 API 오류로 판단."""
     try:
         if _TOKEN_CACHE.exists():
             data = json.loads(_TOKEN_CACHE.read_text(encoding='utf-8'))
-            if data.get('expires', 0) > time.time():
-                return data['token']
+            return data.get('token')
     except Exception:
         pass
     return None
 
+def _oms_save_token(token):
+    try:
+        _TOKEN_CACHE.write_text(
+            json.dumps({'token': token, 'expires': time.time() + 86400 * 30}),
+            encoding='utf-8'
+        )
+    except Exception:
+        pass
+
 def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
     token = _oms_load_token()
     if not token:
-        return None, 'OMS 토큰 없음 — check_delivery.py를 먼저 한 번 실행하세요.'
+        return None, 'OMS 토큰 없음 — fetch_orders_oms.py 또는 check_delivery.py를 먼저 실행하세요.'
 
     headers = {
         'Authorization': f'Bearer {token}',
@@ -65,10 +74,15 @@ def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
         try:
             with urllib.request.urlopen(req, timeout=20) as r:
                 body = json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                return None, 'OMS 토큰 만료 — fetch_orders_oms.py를 실행해 토큰을 갱신하세요.'
+            return None, f'OMS API 오류 (HTTP {e.code}): {e.reason}'
         except Exception as e:
             return None, f'OMS API 오류: {e}'
 
-        orders = body.get('data', {}).get('list', [])
+        data_block = body.get('data') or {}
+        orders = data_block.get('list', [])
         if not orders:
             break
 
@@ -92,7 +106,7 @@ def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
                         'channel':   order.get('saleChannelName', ''),
                     })
 
-        pagination  = body.get('data', {}).get('pagenation', {})
+        pagination  = data_block.get('pagenation', {})
         total_pages = pagination.get('totalPage', 1)
         if page >= total_pages:
             break
