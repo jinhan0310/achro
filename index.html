@@ -3912,6 +3912,7 @@ function renderVendorHistTable() {
     <input id="om-srch" placeholder="주문번호, 주문자, 메모 내용 검색..." oninput="omRender()"
       style="flex:1;background:none;border:none;color:var(--text);font-size:13px;padding:9px 0;outline:none">
   </div>
+  <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap" id="om-status-filters"></div>
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
     <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:4px;cursor:pointer">
       <input type="checkbox" id="om-undoneOnly" onchange="omRender()"> 미완료만 보기
@@ -9424,10 +9425,41 @@ function settleSwitchTab(tab) {
 // ── 관리자 메모 모듈 ─────────────────────────────────────────────
 (function(){
   var _data = [];
+  var _activeStatus = '배송대기'; // 기본값
   var STATUS_COLOR = {
     '배송대기':'#1976d2','상품준비중':'#f59e0b','배송중':'#7c3aed',
-    '배송완료':'#2e7d52','구매확정':'#2e7d52','취소':'#c62828',
-    '반품':'#c62828','교환':'#c62828',
+    '부분배송':'#9333ea','배송완료':'#2e7d52','구매확정':'#2e7d52',
+    '취소':'#c62828','반품':'#c62828','교환':'#c62828',
+  };
+
+  function _buildFilters(){
+    var statuses = [];
+    _data.forEach(function(o){
+      if(statuses.indexOf(o.status) < 0) statuses.push(o.status);
+    });
+    // 배송대기를 맨 앞으로
+    statuses.sort(function(a,b){
+      if(a==='배송대기') return -1;
+      if(b==='배송대기') return 1;
+      return 0;
+    });
+    // 전체 버튼 추가
+    statuses.unshift('전체');
+    var wrap = document.getElementById('om-status-filters');
+    wrap.innerHTML = statuses.map(function(s){
+      var active = s === _activeStatus;
+      var col = STATUS_COLOR[s] || '#888';
+      var bg = active ? col : 'var(--surface)';
+      var fc = active ? '#fff' : col;
+      var border = active ? col : 'var(--border)';
+      return '<button onclick="omSetStatus(\''+s+'\')" style="font-size:12px;padding:4px 12px;border-radius:20px;border:1px solid '+border+';background:'+bg+';color:'+fc+';cursor:pointer;font-weight:'+(active?'700':'400')+'">' + s + '</button>';
+    }).join('');
+  }
+
+  window.omSetStatus = function(s){
+    _activeStatus = s;
+    _buildFilters();
+    omRender();
   };
 
   window.omLoad = function(){
@@ -9439,6 +9471,7 @@ function settleSwitchTab(tab) {
     statusEl.style.display = 'block';
     statusEl.textContent = 'OMS에서 메모 조회 중...';
     listEl.innerHTML = '';
+    document.getElementById('om-status-filters').innerHTML = '';
 
     fetch('http://localhost:7777/api/order-memos')
       .then(function(r){ return r.json(); })
@@ -9450,12 +9483,14 @@ function settleSwitchTab(tab) {
           return;
         }
         _data = res.orders || [];
+        _activeStatus = '배송대기';
         var now = new Date().toLocaleString('ko-KR');
         document.getElementById('om-updated').textContent = '업데이트: ' + now;
         if(_data.length === 0){
           statusEl.textContent = '메모가 있는 주문이 없습니다.';
         } else {
           statusEl.style.display = 'none';
+          _buildFilters();
           omRender();
         }
       })
@@ -9473,6 +9508,7 @@ function settleSwitchTab(tab) {
     var undoneOnly = document.getElementById('om-undoneOnly').checked;
 
     var rows = _data.filter(function(o){
+      if(_activeStatus !== '전체' && o.status !== _activeStatus) return false;
       if(undoneOnly){
         var hasUndone = o.memos.some(function(m){ return m.isDone !== 'Y'; });
         if(!hasUndone) return false;
