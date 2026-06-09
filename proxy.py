@@ -22,6 +22,10 @@ API_KEY    = os.getenv('IMWEB_API_KEY', '')
 SECRET_KEY = os.getenv('IMWEB_SECRET_KEY', '')
 IMWEB_BASE = 'https://api.imweb.me'
 OMS_BASE   = 'https://api.oms.imweb.me/admin/v1'
+
+# OMS 읽기 전용 허용 엔드포인트 (이 외 모든 OMS 요청은 차단)
+OMS_READONLY_PATHS = {'/order'}
+OMS_READONLY_METHOD = 'GET'
 DB         = Path(__file__).parent / 'jarvis' / 'jarvis.db'
 _TOKEN_CACHE = Path(__file__).parent / '.oms_token.json'
 TAB_DELIVERY_WAIT = 't202407045444dde9a5ed1'
@@ -42,6 +46,23 @@ def _oms_load_token():
         pass
     return None
 
+def _oms_get(path, params=None, timeout=20):
+    """OMS API GET 전용 호출 — POST/PUT/DELETE 는 코드 레벨에서 불가."""
+    token = _oms_load_token()
+    if not token:
+        raise RuntimeError('OMS 토큰 없음')
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Accept': 'application/json',
+        'Referer': 'https://app.oms.imweb.me/',
+    }
+    url = OMS_BASE + path
+    if params:
+        url += '?' + urlencode(params)
+    req = urllib.request.Request(url, headers=headers, method='GET')
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
+
 def _oms_save_token(token):
     try:
         _TOKEN_CACHE.write_text(
@@ -53,109 +74,81 @@ def _oms_save_token(token):
 
 DELIVERY_STATUSES = {'OSS02'}  # 배송대기만 (OSS01 상품준비중 제외)
 
-def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
-    token = _oms_load_token()
-    if not token:
-        return None, 'OMS 토큰 없음 — fetch_orders_oms.py 또는 check_delivery.py를 먼저 실행하세요.'
+STATUS_LABEL = {
+    'OSS01': '상품준비중', 'OSS02': '배송대기', 'OSS03': '배송중',
+    'OSS04': '배송완료', 'OSS05': '구매확정', 'OSS06': '취소',
+    'OSS07': '교환', 'OSS08': '반품', 'OSS09': '환불',
+    'PARTIAL_SHIPPED': '부분배송', 'SHIPPED': '배송중',
+    'PARTIAL_CANCEL': '부분취소', 'PARTIAL_EXCHANGE': '부분교환',
+    'PARTIAL_CANCEL_RETURN': '부분취소반품', 'PARTIAL_RETURN': '부분반품',
+}
 
-    headers = {
-        'Authorization': f'Bearer {token}',
-        'Accept': 'application/json',
-        'Referer': 'https://app.oms.imweb.me/',
-    }
-
-    all_items = []
-
-    for page in range(1, 11):  # 최대 10페이지(1000건) 전체 스캔
-        params = {'page': page, 'sort': 'wtime', 'pageSize': 100}
-
-        url = OMS_BASE + '/order?' + urlencode(params)
-        req = urllib.request.Request(url, headers=headers)
+def _oms_scan_pages(max_pages=10):
+    """OMS /order 를 GET 전용으로 최대 max_pages 페이지 스캔. (list, error) 반환."""
+    all_orders = []
+    for page in range(1, max_pages + 1):
         try:
-            with urllib.request.urlopen(req, timeout=20) as r:
-                body = json.loads(r.read())
+            body = _oms_get('/order', {'page': page, 'sort': 'wtime', 'pageSize': 100})
         except urllib.error.HTTPError as e:
             if e.code in (401, 403):
                 return None, 'OMS 토큰 만료 — fetch_orders_oms.py를 실행해 토큰을 갱신하세요.'
             return None, f'OMS API 오류 (HTTP {e.code}): {e.reason}'
+        except RuntimeError as e:
+            return None, str(e)
         except Exception as e:
             return None, f'OMS API 오류: {e}'
-
-        data_block = body.get('data') or {}
-        orders = data_block.get('list', [])
+        orders = (body.get('data') or {}).get('list', [])
         if not orders:
             break
+        all_orders.extend(orders)
+    return all_orders, None
 
-        for order in orders:
-            if order.get('sectionStatusCd') not in DELIVERY_STATUSES:
-                continue
-            dl = (order.get('orderDeliveryList') or [{}])[0]
-            for section in order.get('orderSectionList', []):
-                for item in section.get('orderSectionItemList', []):
-                    opts = ', '.join(
-                        f"{o['key']}:{o['value']}"
-                        for o in (item.get('optionInfo') or [])
-                    )
-                    all_items.append({
-                        'orderNo':   str(order['orderNo']),
-                        'orderDate': order['orderDate'][:10],
-                        'orderer':   order.get('ordererName', ''),
-                        'receiver':  dl.get('receiverName', ''),
-                        'phone':     dl.get('receiverCall', ''),
-                        'zipcode':   dl.get('zipcode', ''),
-                        'address':   (dl.get('addr1', '') + ' ' + dl.get('addr2', '')).strip(),
-                        'prodName':  item.get('prodName', ''),
-                        'option':    opts,
-                        'qty':       item.get('qty', 1),
-                        'itemPrice': item.get('itemPrice', 0),
-                        'channel':   order.get('saleChannelName', ''),
-                    })
+def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
+    orders, err = _oms_scan_pages()
+    if err:
+        return None, err
 
+    all_items = []
+    for order in orders:
+        if order.get('sectionStatusCd') not in DELIVERY_STATUSES:
+            continue
+        dl = (order.get('orderDeliveryList') or [{}])[0]
+        for section in order.get('orderSectionList', []):
+            for item in section.get('orderSectionItemList', []):
+                opts = ', '.join(
+                    f"{o['key']}:{o['value']}"
+                    for o in (item.get('optionInfo') or [])
+                )
+                all_items.append({
+                    'orderNo':   str(order['orderNo']),
+                    'orderDate': order['orderDate'][:10],
+                    'orderer':   order.get('ordererName', ''),
+                    'receiver':  dl.get('receiverName', ''),
+                    'phone':     dl.get('receiverCall', ''),
+                    'zipcode':   dl.get('zipcode', ''),
+                    'address':   (dl.get('addr1', '') + ' ' + dl.get('addr2', '')).strip(),
+                    'prodName':  item.get('prodName', ''),
+                    'option':    opts,
+                    'qty':       item.get('qty', 1),
+                    'itemPrice': item.get('itemPrice', 0),
+                    'channel':   order.get('saleChannelName', ''),
+                })
     return all_items, None
 
 def _oms_fetch_order_memos():
-    """관리자 메모가 있는 주문 목록 반환 (최근 10페이지 스캔)"""
-    token = _oms_load_token()
-    if not token:
-        return None, 'OMS 토큰 없음 — fetch_orders_oms.py 또는 check_delivery.py를 먼저 실행하세요.'
-
-    headers = {
-        'Authorization': f'Bearer {token}',
-        'Accept': 'application/json',
-        'Referer': 'https://app.oms.imweb.me/',
-    }
-
-    STATUS_LABEL = {
-        'OSS01': '상품준비중', 'OSS02': '배송대기', 'OSS03': '배송중',
-        'OSS04': '배송완료', 'OSS05': '구매확정', 'OSS06': '취소',
-        'OSS07': '교환', 'OSS08': '반품', 'OSS09': '환불',
-        'PARTIAL_SHIPPED': '부분배송',
-        'SHIPPED': '배송중',
-        'PARTIAL_CANCEL': '부분취소',
-        'PARTIAL_EXCHANGE': '부분교환',
-        'PARTIAL_CANCEL_RETURN': '부분취소반품',
-        'PARTIAL_RETURN': '부분반품',
-    }
+    """관리자 메모가 있는 주문 목록 반환 (최근 10페이지 GET 전용 스캔)"""
+    orders, err = _oms_scan_pages()
+    if err:
+        return None, err
 
     result = []
-    for page in range(1, 11):
-        params = {'page': page, 'sort': 'wtime', 'pageSize': 100}
-        url = OMS_BASE + '/order?' + urlencode(params)
-        req = urllib.request.Request(url, headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=20) as r:
-                body = json.loads(r.read())
-        except urllib.error.HTTPError as e:
-            if e.code in (401, 403):
-                return None, 'OMS 토큰 만료 — fetch_orders_oms.py를 실행해 토큰을 갱신하세요.'
-            return None, f'OMS API 오류 (HTTP {e.code}): {e.reason}'
-        except Exception as e:
-            return None, f'OMS API 오류: {e}'
-
-        data_block = body.get('data') or {}
-        orders = data_block.get('list', [])
-        if not orders:
-            break
+    for order in orders:
+        memos = order.get('orderMemos') or []
+        if not memos:
+            continue
+        active_memos = [m for m in memos if m.get('isDel') != 'Y']
+        if not active_memos:
+            continue
 
         for order in orders:
             memos = order.get('orderMemos') or []
@@ -490,6 +483,10 @@ class ProxyHandler(BaseHTTPRequestHandler):
         self._proxy('POST')
 
     def _proxy(self, method):
+        # OMS 도메인으로의 직접 프록시 요청은 모두 차단
+        if 'oms.imweb.me' in self.path:
+            return self._json(403, {'ok': False, 'msg': 'OMS 직접 프록시 차단 — 읽기 전용 API만 허용됩니다.'})
+
         target  = IMWEB_BASE + self.path
         headers = {}
         if self.headers.get('access-token'):
