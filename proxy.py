@@ -50,7 +50,7 @@ def _oms_save_token(token):
     except Exception:
         pass
 
-DELIVERY_STATUSES = {'OSS01', 'OSS02'}  # 상품준비중 + 배송대기 (OMS 배송대기 탭과 일치)
+DELIVERY_STATUSES = {'OSS02'}  # 배송대기만 (OSS01 상품준비중 제외)
 
 def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
     token = _oms_load_token()
