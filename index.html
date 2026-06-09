@@ -2228,22 +2228,18 @@ function openKpiModal(type) {
     var delTx = e.target.closest('.kpi-del-tx');
     if (delTx) {
       e.stopPropagation();
-      customConfirm('이 입고 내역을 삭제하시겠습니까?', function() {
-        var txId = delTx.dataset.txid;
-        saveTx(loadTx().filter(function(t){ return String(t.id) !== String(txId); }));
-        openKpiModal(type);
-        renderVendorLedger();
-      });
+      var txId = delTx.dataset.txid;
+      saveTx(loadTx().filter(function(t){ return String(t.id) !== String(txId); }));
+      openKpiModal(type);
+      renderVendorLedger();
       return;
     }
     var delMinus = e.target.closest('.kpi-del-minus');
     if (delMinus) {
       e.stopPropagation();
-      customConfirm('이 항목을 삭제하시겠습니까?', function() {
-        saveMinus(loadMinus().filter(function(m){ return m.id !== delMinus.dataset.minid; }));
-        openKpiModal(type);
-        renderVendorLedger();
-      });
+      saveMinus(loadMinus().filter(function(m){ return m.id !== delMinus.dataset.minid; }));
+      openKpiModal(type);
+      renderVendorLedger();
       return;
     }
     var vrow = e.target.closest('.kpi-vrow');
