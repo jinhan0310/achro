@@ -4942,9 +4942,10 @@ async function imwebFetchOrders() {
 
     ocOrders = allItems;
     ocOrderDate = new Date().toLocaleDateString('ko-KR');
+    var uOrderCnt = new Set(rawItems.map(function(i){ return i.orderNo; })).size;
     document.getElementById('oc-dropA').style.borderColor = 'var(--green)';
-    ocSetStA('✓ 아임웹 배송대기 ' + allItems.length + '건');
-    ocSetChip('oc-chipO', '배송대기 ' + allItems.length + '건', '#052e16', 'var(--green)');
+    ocSetStA('✓ 아임웹 배송대기 ' + uOrderCnt + '건');
+    ocSetChip('oc-chipO', '배송대기 ' + uOrderCnt + '건', '#052e16', 'var(--green)');
     ocCheckReady();
 
   } catch(e) {
