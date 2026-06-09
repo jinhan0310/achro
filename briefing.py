@@ -1023,6 +1023,20 @@ def main():
     else:
         print("  [SKIP] IMWEB_API_KEY / IMWEB_SECRET_KEY 미설정")
 
+    print("\n[2.5/5] OMS 제품명 데이터 수집 → Jarvis DB 저장 중...")
+    try:
+        from fetch_orders_oms import get_oms_token as _get_oms_token
+        from fetch_orders_oms import fetch_orders as _fetch_oms_orders
+        _oms_token   = _get_oms_token()
+        _oms_orders  = _fetch_oms_orders(_oms_token, yesterday, yesterday)
+        print(f"  [OK] OMS 제품 데이터 {len(_oms_orders)}건 수집")
+        if _JARVIS_OK and _oms_orders:
+            _jarvis_db.init_db()
+            _jarvis_db.save_product_sales(_oms_orders)
+            print(f"  [OK] Jarvis product_sales 저장 완료")
+    except Exception as _oms_e:
+        print(f"  [WARN] OMS 데이터 수집 실패 (브리핑은 계속): {_oms_e}")
+
     print("\n[3/5] Claude AI 분석 중...")
     try:
         analysis = get_claude_analysis(account, campaigns, weekly, imweb)

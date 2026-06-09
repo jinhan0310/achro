@@ -221,6 +221,44 @@ def answer_products(question: str, db) -> str:
     return "\n".join(lines)
 
 
+def answer_delivery(question: str, db) -> str:
+    """배송대기 주문 현황 조회 (OMS 실시간)"""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    try:
+        from fetch_orders_oms import get_oms_token, fetch_delivery_waiting
+    except ImportError:
+        return "배송대기 조회 모듈을 찾을 수 없습니다.\nfetch_orders_oms.py가 필요합니다."
+
+    try:
+        token  = get_oms_token()
+        orders = fetch_delivery_waiting(token, max_pages=5)
+    except Exception as e:
+        return f"배송대기 조회 실패: {str(e)[:80]}"
+
+    if not orders:
+        return "현재 배송대기 주문이 없습니다."
+
+    from collections import defaultdict
+    summary = defaultdict(int)
+    for o in orders:
+        key = o["prodName"].split("[")[0].strip()[:20] if o["prodName"] else "기타"
+        summary[key] += o["qty"]
+
+    top5 = sorted(summary.items(), key=lambda x: -x[1])[:5]
+    lines = [
+        f"📦 배송대기 현황 (최신 {len(orders)}건)",
+        "━━━━━━━━━━━━",
+        f"총 {len(orders)}건 대기 중",
+        "",
+        "[상품별 수량]",
+    ]
+    for name, qty in top5:
+        lines.append(f"  {name}: {qty}개")
+    return "\n".join(lines)
+
+
 def answer_stock(question: str, db) -> str:
     return (
         "🗂 재고 현황은 아크로 시스템 상단 [재고현황] 탭에서 확인하세요.\n\n"
@@ -253,12 +291,13 @@ def answer_free(question: str, db) -> str:
 def get_answer(question: str, question_type: str, db) -> str:
     try:
         dispatch = {
-            "stock":    answer_stock,
-            "products": answer_products,
-            "imweb":    answer_imweb,
-            "meta":     answer_meta,
+            "stock":      answer_stock,
+            "delivery":   answer_delivery,
+            "products":   answer_products,
+            "imweb":      answer_imweb,
+            "meta":       answer_meta,
             "competitor": answer_competitor,
-            "briefing": answer_briefing,
+            "briefing":   answer_briefing,
         }
         fn = dispatch.get(question_type, answer_free)
         return fn(question, db)

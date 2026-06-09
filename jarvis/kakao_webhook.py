@@ -15,6 +15,10 @@ def classify_question(text: str) -> str:
         "시즌 인기", "시즌별", "연도별", "판매 순위", "판매순위",
         "어떤 상품", "어떤상품", "뭐가 잘", "뭐가잘",
     ]
+    delivery_keywords = [
+        "배송대기", "배송 대기", "출고대기", "출고 대기", "발송대기", "발송 대기",
+        "아직 안 보낸", "안보낸", "미발송",
+    ]
     imweb_keywords = [
         "매출", "주문", "판매", "결제", "객단가", "아임웹", "AOV", "aov",
         "몇건", "평균 주문", "평균주문",
@@ -32,6 +36,8 @@ def classify_question(text: str) -> str:
 
     if any(k in t for k in stock_keywords):
         return "stock"
+    if any(k in t for k in delivery_keywords):
+        return "delivery"
     if any(k in t for k in products_keywords):
         return "products"
     if any(k in t for k in imweb_keywords):
