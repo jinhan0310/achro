@@ -89,6 +89,7 @@ def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
         for order in orders:
             if order.get('sectionStatusCd') not in DELIVERY_STATUSES:
                 continue
+            dl = (order.get('orderDeliveryList') or [{}])[0]
             for section in order.get('orderSectionList', []):
                 for item in section.get('orderSectionItemList', []):
                     opts = ', '.join(
@@ -99,8 +100,10 @@ def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
                         'orderNo':   str(order['orderNo']),
                         'orderDate': order['orderDate'][:10],
                         'orderer':   order.get('ordererName', ''),
-                        'receiver':  order.get('receiverName', ''),
-                        'phone':     order.get('receiverPhone', ''),
+                        'receiver':  dl.get('receiverName', ''),
+                        'phone':     dl.get('receiverCall', ''),
+                        'zipcode':   dl.get('zipcode', ''),
+                        'address':   (dl.get('addr1', '') + ' ' + dl.get('addr2', '')).strip(),
                         'prodName':  item.get('prodName', ''),
                         'option':    opts,
                         'qty':       item.get('qty', 1),
@@ -121,22 +124,24 @@ def _save_delivery_excel(items):
     ws = wb.active
     ws.title = '배송대기'
 
-    headers = ['주문번호', '주문일', '주문자명', '수령자명', '전화번호',
-               '상품명', '옵션명', '구매수량', '단가', '채널']
+    headers = ['주문번호', '주문일', '채널', '주문자명', '수령자명', '전화번호',
+               '우편번호', '주소', '상품명', '옵션명', '구매수량', '단가']
     ws.append(headers)
 
     for item in items:
         ws.append([
             item.get('orderNo', ''),
             item.get('orderDate', ''),
+            item.get('channel', ''),
             item.get('orderer', ''),
             item.get('receiver', ''),
             item.get('phone', ''),
+            item.get('zipcode', ''),
+            item.get('address', ''),
             item.get('prodName', ''),
             item.get('option', ''),
             item.get('qty', 1),
             item.get('itemPrice', 0),
-            item.get('channel', ''),
         ])
 
     wb.save(str(fpath))
@@ -331,16 +336,6 @@ class ProxyHandler(BaseHTTPRequestHandler):
         if self.path == '/api/customers/status':
             return self._json(200, _update_status)
 
-        if self.path.startswith('/api/delivery-waiting'):
-            parsed = urlparse(self.path)
-            qs     = parse_qs(parsed.query)
-            date_from = qs.get('from', [None])[0]
-            date_to   = qs.get('to',   [None])[0]
-            items, err = _oms_fetch_delivery_waiting(date_from, date_to)
-            if err:
-                return self._json(200, {'ok': False, 'msg': err})
-            return self._json(200, {'ok': True, 'items': items, 'count': len(items)})
-
         if self.path == '/api/delivery-waiting/save-excel':
             items, err = _oms_fetch_delivery_waiting()
             if err:
@@ -351,6 +346,16 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 return self._json(200, {'ok': True, 'file': fname, 'orders': order_cnt, 'items': len(items)})
             except Exception as e:
                 return self._json(200, {'ok': False, 'msg': f'Excel 생성 오류: {e}'})
+
+        if self.path.startswith('/api/delivery-waiting'):
+            parsed = urlparse(self.path)
+            qs     = parse_qs(parsed.query)
+            date_from = qs.get('from', [None])[0]
+            date_to   = qs.get('to',   [None])[0]
+            items, err = _oms_fetch_delivery_waiting(date_from, date_to)
+            if err:
+                return self._json(200, {'ok': False, 'msg': err})
+            return self._json(200, {'ok': True, 'items': items, 'count': len(items)})
 
         self._proxy('GET')
 
