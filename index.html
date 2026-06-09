@@ -2070,8 +2070,19 @@ function filterVendorList() {
 }
 
 function resolveVendorFromSearch() {
+  // 펼쳐진 거래처 카드가 있으면 최우선 반환
+  if (window._lastExpandedVendor) return window._lastExpandedVendor;
+
   var q = (document.getElementById('vled-search').value || '').trim();
   if (!q) return '';
+
+  // 현재 화면에 카드가 1개만 보이면 그 거래처명 반환
+  var cards = document.querySelectorAll('#vendor-ledger-list .vl-card');
+  if (cards.length === 1) {
+    var enc = cards[0].dataset.vendor;
+    if (enc) return decodeURIComponent(enc);
+  }
+
   var txs = loadTx();
   var allVendors = txs.filter(function(t){ return t.type==='in' && t.vendor; })
     .map(function(t){ return t.vendor; })
@@ -2568,6 +2579,8 @@ function renderVendorLedger(searchQ) {
       hdr.style.background = isNowOpen ? '#f0ede8' : 'var(--surface)';
       hdr.style.borderBottom = isNowOpen ? '1px solid var(--border)' : 'none';
       if (arrow) arrow.style.transform = isNowOpen ? 'rotate(180deg)' : 'rotate(0deg)';
+      if (isNowOpen) window._lastExpandedVendor = vname;
+      else if (window._lastExpandedVendor === vname) window._lastExpandedVendor = null;
       return;
     }
   });
