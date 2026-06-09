@@ -63,12 +63,9 @@ def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
         'Referer': 'https://app.oms.imweb.me/',
     }
 
-    all_items  = []
-    page       = 1
-    max_pages  = 10
-    consec_empty = 0   # 배송대기 없는 연속 페이지 수
+    all_items = []
 
-    while page <= max_pages:
+    for page in range(1, 11):  # 최대 10페이지(1000건) 전체 스캔
         params = {'page': page, 'sort': 'wtime', 'pageSize': 100}
 
         url = OMS_BASE + '/order?' + urlencode(params)
@@ -88,7 +85,6 @@ def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
         if not orders:
             break
 
-        page_count = 0
         for order in orders:
             if order.get('sectionStatusCd') not in DELIVERY_STATUSES:
                 continue
@@ -110,16 +106,6 @@ def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
                         'itemPrice': item.get('itemPrice', 0),
                         'channel':   order.get('saleChannelName', ''),
                     })
-                    page_count += 1
-
-        if page_count == 0:
-            consec_empty += 1
-            if consec_empty >= 2:
-                break
-        else:
-            consec_empty = 0
-
-        page += 1
 
     return all_items, None
 
