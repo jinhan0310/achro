@@ -1,5 +1,11 @@
 .env
 *.db
+.oms_token.json
+imweb_ground_auth.py
+run_auth.bat
+fetch_orders_oms.py
+check_delivery.py
+check_spec.py
 briefing_log.txt
 reports/
 __pycache__/
