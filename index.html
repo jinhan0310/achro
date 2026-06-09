@@ -4056,9 +4056,12 @@ function renderVendorHistTable() {
       <div id="ir-vendorList" style="max-height:560px;overflow-y:auto;display:flex;flex-direction:column;gap:1px;"></div>
     </div>
 
-    <!-- 월별 저장 이력 -->
+    <!-- 작업 저장 이력 -->
     <div class="ir-card" style="padding:1rem;margin-top:10px;">
-      <div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px;">월별 작업 이력</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <span style="font-size:14px;font-weight:700;color:var(--text);">작업 저장 이력</span>
+        <button onclick="irManualSave()" style="font-size:12px;padding:5px 14px;background:#1a73e8;color:#fff;border:none;border-radius:8px;cursor:pointer;font-family:inherit;font-weight:700;">저장</button>
+      </div>
       <div id="ir-history-list"><div style="font-size:12px;color:var(--text3);">저장 이력 없음</div></div>
     </div>
   </div>
@@ -6223,34 +6226,44 @@ function taxExportCSV() {
     irRenderVendorList(); irFilterData();
   };
 
-  // ── 월별 자동저장 ──
+  // ── 작업 수동 저장 ──
   var IR_HIST_KEY = 'achro_ir_history';
-  var _irSaveTimer = null;
 
-  function irAutoSave() {
-    clearTimeout(_irSaveTimer);
-    _irSaveTimer = setTimeout(function() {
-      if (irCheckedVendors.size === 0) return;
-      var now = new Date();
-      var yearMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
-      var selectedTotal = 0, selCount = 0;
-      irDATA.forEach(function(d, i) { if (irSelectedIds.has(i)) { selectedTotal += d.amount; selCount++; } });
-      var record = {
-        yearMonth: yearMonth,
-        savedAt: now.toISOString(),
-        checkedVendors: [...irCheckedVendors].sort(function(a,b){ return a.localeCompare(b,'ko'); }),
-        selectedTotal: selectedTotal,
-        vat: Math.round(selectedTotal * 0.1),
-        selCount: selCount
-      };
-      var hist = irLoadHistory();
-      var idx = hist.findIndex(function(h){ return h.yearMonth === yearMonth; });
-      if (idx >= 0) hist[idx] = record; else hist.unshift(record);
-      hist.sort(function(a,b){ return b.yearMonth.localeCompare(a.yearMonth); });
-      localStorage.setItem(IR_HIST_KEY, JSON.stringify(hist));
-      irRenderHistory();
-    }, 1000);
-  }
+  window.irManualSave = function() {
+    if (irCheckedVendors.size === 0) { alert('확인완료 체크된 업체가 없습니다.'); return; }
+    var now = new Date();
+    var yearMonth = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+    // 업체별 금액 상세 (irVendorMap 기준 — 해당 업체의 전체 거래 합계)
+    var vendorDetails = [...irCheckedVendors]
+      .sort(function(a,b){ return a.localeCompare(b,'ko'); })
+      .map(function(v) {
+        var info = irVendorMap[v] || {total:0, count:0};
+        return { name: v, total: info.total, count: info.count };
+      });
+    var selectedTotal = vendorDetails.reduce(function(s,v){ return s+v.total; }, 0);
+    var selCount = vendorDetails.reduce(function(s,v){ return s+v.count; }, 0);
+    var record = {
+      id: Date.now() + '',
+      yearMonth: yearMonth,
+      savedAt: now.toISOString(),
+      vendorDetails: vendorDetails,
+      selectedTotal: selectedTotal,
+      vat: Math.round(selectedTotal * 0.1),
+      selCount: selCount
+    };
+    var hist = irLoadHistory();
+    hist.unshift(record);
+    localStorage.setItem(IR_HIST_KEY, JSON.stringify(hist));
+    irRenderHistory();
+    alert('저장되었습니다. (업체 '+vendorDetails.length+'곳)');
+  };
+
+  window.irDeleteHistory = function(id) {
+    if (!confirm('이 저장 이력을 삭제하시겠습니까?')) return;
+    var hist = irLoadHistory().filter(function(h){ return h.id !== id; });
+    localStorage.setItem(IR_HIST_KEY, JSON.stringify(hist));
+    irRenderHistory();
+  };
 
   function irLoadHistory() {
     try { return JSON.parse(localStorage.getItem(IR_HIST_KEY) || '[]'); } catch(e) { return []; }
@@ -6261,18 +6274,40 @@ function taxExportCSV() {
     if (!container) return;
     var hist = irLoadHistory();
     if (!hist.length) { container.innerHTML = '<div style="font-size:12px;color:var(--text3);">저장 이력 없음</div>'; return; }
-    container.innerHTML = hist.map(function(h) {
+    container.innerHTML = hist.map(function(h, idx) {
       var d = new Date(h.savedAt);
       var dateStr = d.getFullYear()+'.'+(d.getMonth()+1)+'.'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
-      return '<div style="padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;">'
-        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+      var uid = h.id || h.yearMonth + '_' + idx;
+      var vendors = h.vendorDetails || (h.checkedVendors||[]).map(function(v){ return {name:v,total:0,count:0}; });
+      var detailId = 'irh-detail-'+uid.replace(/[^a-zA-Z0-9]/g,'_');
+      var vendorRows = vendors.map(function(v){
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #f0ece8;">'
+          + '<span style="font-size:12px;color:var(--text2);">'+v.name+'</span>'
+          + '<span style="font-size:12px;font-weight:700;color:var(--text);font-family:\'DM Mono\',monospace;">'+(v.total?'₩'+v.total.toLocaleString():'-')+'</span>'
+          + '</div>';
+      }).join('');
+      return '<div style="border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden;">'
+        // 헤더
+        + '<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;background:var(--surface2);">'
+        + '<div>'
         + '<span style="font-size:13px;font-weight:700;color:var(--text);">'+h.yearMonth+'</span>'
-        + '<span style="font-size:11px;color:var(--text3);">'+dateStr+' 저장</span>'
+        + '<span style="font-size:11px;color:var(--text3);margin-left:8px;">'+dateStr+' 저장</span>'
         + '</div>'
-        + '<div style="font-size:12px;color:var(--text2);margin-bottom:4px;">업체 <b>'+h.checkedVendors.length+'곳</b> · '+h.selCount+'건</div>'
-        + '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px;">선택합계 ₩'+h.selectedTotal.toLocaleString()+'</div>'
-        + '<div style="font-size:12px;color:#e67e00;margin-bottom:6px;">부가세 10% ₩'+h.vat.toLocaleString()+'</div>'
-        + '<div style="font-size:11px;color:var(--text3);line-height:1.6;">'+h.checkedVendors.join(' · ')+'</div>'
+        + '<button onclick="irDeleteHistory(\''+uid+'\')" style="background:none;border:none;cursor:pointer;color:#ccc;font-size:13px;padding:0 4px;" title="삭제">✕</button>'
+        + '</div>'
+        // 요약
+        + '<div style="padding:8px 12px;border-bottom:1px solid var(--border);">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;">'
+        + '<span style="font-size:12px;color:var(--text2);">업체 <b>'+vendors.length+'곳</b> · '+h.selCount+'건</span>'
+        + '<button onclick="var el=document.getElementById(\''+detailId+'\');el.style.display=el.style.display===\'none\'?\'\':\'none\';" style="font-size:11px;padding:2px 8px;border:1px solid var(--border2);border-radius:6px;background:transparent;cursor:pointer;font-family:inherit;color:var(--text2);">업체별 상세</button>'
+        + '</div>'
+        + '<div style="font-size:14px;font-weight:700;color:var(--text);margin-top:4px;">합계 ₩'+h.selectedTotal.toLocaleString()+'</div>'
+        + '<div style="font-size:11px;color:#e67e00;">부가세 10% ₩'+h.vat.toLocaleString()+'</div>'
+        + '</div>'
+        // 업체별 상세 (기본 펼침)
+        + '<div id="'+detailId+'" style="padding:8px 12px;">'
+        + vendorRows
+        + '</div>'
         + '</div>';
     }).join('');
   }
@@ -6285,7 +6320,6 @@ function taxExportCSV() {
     });
     irRenderVendorList();
     irUpdateQuickButtonColors();
-    irAutoSave();
   }
 
   function irUpdateQuickButtonColors() {
