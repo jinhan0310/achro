@@ -159,13 +159,57 @@ def _oms_fetch_order_memos():
             active_memos = [m for m in memos if m.get('isDel') != 'Y']
             if not active_memos:
                 continue
+
             status_cd = order.get('sectionStatusCd', '')
+            dl = (order.get('orderDeliveryList') or [{}])[0]
+
+            # 결제수단 추출
+            pay_method = ''
+            pi = order.get('paymentInfo') or {}
+            for pl in pi.get('paymentList') or []:
+                for d in pl.get('data') or []:
+                    easy = d.get('easy') or {}
+                    bd = easy.get('bodyData') or {}
+                    if bd.get('paymentMethod'):
+                        pay_method = bd['paymentMethod']
+                        break
+
+            # 상품 목록
+            items = []
+            for section in order.get('orderSectionList') or []:
+                for item in section.get('orderSectionItemList') or []:
+                    opts = ' / '.join(
+                        f"{o['key']}: {o['value']}"
+                        for o in (item.get('optionInfo') or [])
+                    )
+                    items.append({
+                        'name':      item.get('prodName', ''),
+                        'option':    opts,
+                        'qty':       item.get('qty', 1),
+                        'price':     item.get('itemPrice', 0),
+                        'origPrice': item.get('baseItemPrice', 0),
+                        'image':     item.get('imageUrl', ''),
+                        'itemNo':    item.get('orderSectionItemNo', ''),
+                    })
+
             result.append({
-                'orderNo':   str(order['orderNo']),
-                'orderDate': order['orderDate'][:10],
-                'orderer':   order.get('ordererName', ''),
-                'status':    STATUS_LABEL.get(status_cd, status_cd),
-                'channel':   order.get('saleChannelName', ''),
+                'orderNo':      str(order['orderNo']),
+                'orderDate':    order['orderDate'][:16].replace('T', ' '),
+                'orderer':      order.get('ordererName', ''),
+                'ordererCall':  order.get('ordererCall', ''),
+                'status':       STATUS_LABEL.get(status_cd, status_cd),
+                'channel':      order.get('saleChannelName', ''),
+                'paymentPrice': order.get('paymentPrice', 0),
+                'prodPrice':    pi.get('totalPrice', 0),
+                'deliveryFee':  pi.get('totalDeliveryPrice', 0),
+                'discountPrice':pi.get('totalDiscountPrice', 0),
+                'payMethod':    pay_method,
+                'receiver':     dl.get('receiverName', ''),
+                'receiverCall': dl.get('receiverCall', ''),
+                'zipcode':      dl.get('zipcode', ''),
+                'address':      (dl.get('addr1', '') + ' ' + dl.get('addr2', '')).strip(),
+                'deliveryMemo': dl.get('memo') or '',
+                'items':        items,
                 'memos': [{
                     'memo':   m.get('memo', ''),
                     'author': m.get('name', ''),
