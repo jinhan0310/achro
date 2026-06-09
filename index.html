@@ -6255,12 +6255,14 @@ function taxExportCSV() {
     hist.unshift(record);
     localStorage.setItem(IR_HIST_KEY, JSON.stringify(hist));
     irRenderHistory();
-    alert('저장되었습니다. (업체 '+vendorDetails.length+'곳)');
   };
 
   window.irDeleteHistory = function(id) {
-    if (!confirm('이 저장 이력을 삭제하시겠습니까?')) return;
-    var hist = irLoadHistory().filter(function(h){ return h.id !== id; });
+    var hist = irLoadHistory();
+    hist = hist.filter(function(h, idx) {
+      var uid = h.id || h.yearMonth + '_' + idx;
+      return uid !== id;
+    });
     localStorage.setItem(IR_HIST_KEY, JSON.stringify(hist));
     irRenderHistory();
   };
