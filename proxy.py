@@ -133,6 +133,8 @@ def _oms_fetch_order_memos():
         'SHIPPED': '배송중',
         'PARTIAL_CANCEL': '부분취소',
         'PARTIAL_EXCHANGE': '부분교환',
+        'PARTIAL_CANCEL_RETURN': '부분취소반품',
+        'PARTIAL_RETURN': '부분반품',
     }
 
     result = []

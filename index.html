@@ -9432,18 +9432,19 @@ function settleSwitchTab(tab) {
     '취소':'#c62828','반품':'#c62828','교환':'#c62828',
   };
 
+  var STATUS_ORDER = ['배송대기','배송중','부분배송','교환','상품준비중','배송완료','구매확정','부분취소','부분교환','부분취소반품','부분반품','취소','반품'];
+
   function _buildFilters(){
     var statuses = [];
     _data.forEach(function(o){
       if(statuses.indexOf(o.status) < 0) statuses.push(o.status);
     });
-    // 배송대기를 맨 앞으로
     statuses.sort(function(a,b){
-      if(a==='배송대기') return -1;
-      if(b==='배송대기') return 1;
-      return 0;
+      var ai = STATUS_ORDER.indexOf(a), bi = STATUS_ORDER.indexOf(b);
+      if(ai < 0) ai = 999;
+      if(bi < 0) bi = 999;
+      return ai - bi;
     });
-    // 전체 버튼 추가
     statuses.unshift('전체');
     var wrap = document.getElementById('om-status-filters');
     wrap.innerHTML = statuses.map(function(s){
@@ -9559,7 +9560,7 @@ function settleSwitchTab(tab) {
           + '</div>';
       }).join('');
 
-      var detailHtml = '<div id="'+uid+'" style="display:none;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">'
+      var detailHtml = '<div id="'+uid+'" style="display:block;margin-top:14px;border-top:1px solid var(--border);padding-top:14px">'
         + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'
         + '<div style="font-size:12px">'
         + '<div style="font-weight:700;margin-bottom:6px;color:var(--text2)">주문자 / 수령자</div>'
@@ -9587,7 +9588,7 @@ function settleSwitchTab(tab) {
         + '<span style="font-size:12px;color:var(--text2)">' + _esc(o.orderer) + '</span>'
         + '<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:'+sc+'22;color:'+sc+'">' + _esc(o.status) + '</span>'
         + '<span style="font-size:11px;color:var(--text2)">' + _esc(o.channel) + '</span>'
-        + '<button onclick="omToggle(\''+uid+'\')" style="margin-left:auto;font-size:11px;padding:3px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);cursor:pointer;color:var(--text2)" id="'+uid+'-btn">상세보기 ▾</button>'
+        + '<button onclick="omToggle(\''+uid+'\')" style="margin-left:auto;font-size:11px;padding:3px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface2);cursor:pointer;color:var(--text2)" id="'+uid+'-btn">접기 ▴</button>'
         + '</div>'
         + detailHtml
         + '<div style="margin-top:10px">' + memosHtml + '</div>'
