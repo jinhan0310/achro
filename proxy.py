@@ -50,6 +50,8 @@ def _oms_save_token(token):
     except Exception:
         pass
 
+DELIVERY_STATUSES = {'OSS01', 'OSS02'}  # 상품준비중 + 배송대기 (OMS 배송대기 탭과 일치)
+
 def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
     token = _oms_load_token()
     if not token:
@@ -61,13 +63,13 @@ def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
         'Referer': 'https://app.oms.imweb.me/',
     }
 
-    all_items, page = [], 1
-    while True:
-        params = {'page': page, 'sort': 'wtime', 'tabCode': TAB_DELIVERY_WAIT}
-        if date_from:
-            params['orderDateFrom'] = f'{date_from}T00:00:00.000Z'
-        if date_to:
-            params['orderDateTo']   = f'{date_to}T23:59:59.000Z'
+    all_items  = []
+    page       = 1
+    max_pages  = 10
+    consec_empty = 0   # 배송대기 없는 연속 페이지 수
+
+    while page <= max_pages:
+        params = {'page': page, 'sort': 'wtime', 'pageSize': 100}
 
         url = OMS_BASE + '/order?' + urlencode(params)
         req = urllib.request.Request(url, headers=headers)
@@ -86,7 +88,10 @@ def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
         if not orders:
             break
 
+        page_count = 0
         for order in orders:
+            if order.get('sectionStatusCd') not in DELIVERY_STATUSES:
+                continue
             for section in order.get('orderSectionList', []):
                 for item in section.get('orderSectionItemList', []):
                     opts = ', '.join(
@@ -105,11 +110,15 @@ def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
                         'itemPrice': item.get('itemPrice', 0),
                         'channel':   order.get('saleChannelName', ''),
                     })
+                    page_count += 1
 
-        pagination  = data_block.get('pagenation', {})
-        total_pages = pagination.get('totalPage', 1)
-        if page >= total_pages:
-            break
+        if page_count == 0:
+            consec_empty += 1
+            if consec_empty >= 2:
+                break
+        else:
+            consec_empty = 0
+
         page += 1
 
     return all_items, None
