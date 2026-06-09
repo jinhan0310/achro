@@ -3832,7 +3832,10 @@ function renderVendorHistTable() {
         <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">매일 업로드</div>
         <div style="font-size:15px;font-weight:700;margin-bottom:6px">주문 내역</div>
         <div style="font-size:12px;color:var(--text2);margin-bottom:12px">imweb 주문 엑셀 파일<br>(.xlsx / .xls)</div>
-        <button class="btn btn-outline" style="font-size:12px" onclick="event.stopPropagation();document.getElementById('oc-fileA').click()">파일 선택</button>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+          <button class="btn btn-outline" style="font-size:12px" onclick="event.stopPropagation();document.getElementById('oc-fileA').click()">파일 선택</button>
+          <button class="btn btn-dark" style="font-size:12px;padding:7px 14px" id="oc-dl-btn" onclick="event.stopPropagation();downloadDeliveryExcel()">배송대기 다운로드</button>
+        </div>
         <div style="margin-top:10px;font-size:12px;color:var(--text2);min-height:18px" id="oc-stA">파일을 드래그하거나 버튼을 눌러주세요</div>
       </div>
       <div style="border:2px dashed var(--border);border-radius:12px;padding:24px 16px;text-align:center;cursor:pointer;background:var(--surface);transition:border-color .2s" id="oc-dropB"
@@ -4870,6 +4873,29 @@ async function imwebGetToken(base) {
   return data.access_token;
 }
 
+
+async function downloadDeliveryExcel() {
+  var btn = document.getElementById('oc-dl-btn');
+  var stEl = document.getElementById('oc-stA');
+  btn.disabled = true;
+  btn.textContent = '다운로드 중...';
+  stEl.textContent = '배송대기 주문 조회 중... (10~30초 소요)';
+  try {
+    var res = await fetch('http://localhost:7777/api/delivery-waiting/save-excel');
+    var data = await res.json();
+    if (!data.ok) throw new Error(data.msg);
+    stEl.textContent = '✓ 다운로드 완료: ' + data.file + ' (' + data.orders + '건)';
+  } catch(e) {
+    if (e.message && e.message.includes('fetch')) {
+      stEl.textContent = '프록시 미실행 — 아임웹프록시실행.bat 먼저 실행하세요';
+    } else {
+      stEl.textContent = '다운로드 실패: ' + e.message;
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '배송대기 다운로드';
+  }
+}
 
 function ocColVal(r, keys) {
   var rKeys = Object.keys(r);

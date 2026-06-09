@@ -15,6 +15,7 @@ from datetime import datetime
 from collections import defaultdict
 from dotenv import load_dotenv
 from urllib.parse import urlencode, parse_qs, urlparse
+import openpyxl
 
 load_dotenv()
 API_KEY    = os.getenv('IMWEB_API_KEY', '')
@@ -110,6 +111,37 @@ def _oms_fetch_delivery_waiting(date_from=None, date_to=None):
     return all_items, None
 
 # ── 아임웹 API 헬퍼 ─────────────────────────────────────────────────
+def _save_delivery_excel(items):
+    """배송대기 아이템 목록을 Excel로 생성해 Downloads 폴더에 저장"""
+    downloads = Path.home() / 'Downloads'
+    fname = f'배송대기_{datetime.now().strftime("%Y%m%d_%H%M")}.xlsx'
+    fpath = downloads / fname
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = '배송대기'
+
+    headers = ['주문번호', '주문일', '주문자명', '수령자명', '전화번호',
+               '상품명', '옵션명', '구매수량', '단가', '채널']
+    ws.append(headers)
+
+    for item in items:
+        ws.append([
+            item.get('orderNo', ''),
+            item.get('orderDate', ''),
+            item.get('orderer', ''),
+            item.get('receiver', ''),
+            item.get('phone', ''),
+            item.get('prodName', ''),
+            item.get('option', ''),
+            item.get('qty', 1),
+            item.get('itemPrice', 0),
+            item.get('channel', ''),
+        ])
+
+    wb.save(str(fpath))
+    return fname
+
 def _get_token():
     url  = f'{IMWEB_BASE}/v2/auth'
     body = json.dumps({'key': API_KEY, 'secret': SECRET_KEY}).encode()
@@ -308,6 +340,17 @@ class ProxyHandler(BaseHTTPRequestHandler):
             if err:
                 return self._json(200, {'ok': False, 'msg': err})
             return self._json(200, {'ok': True, 'items': items, 'count': len(items)})
+
+        if self.path == '/api/delivery-waiting/save-excel':
+            items, err = _oms_fetch_delivery_waiting()
+            if err:
+                return self._json(200, {'ok': False, 'msg': err})
+            try:
+                fname = _save_delivery_excel(items)
+                order_cnt = len(set(i['orderNo'] for i in items))
+                return self._json(200, {'ok': True, 'file': fname, 'orders': order_cnt, 'items': len(items)})
+            except Exception as e:
+                return self._json(200, {'ok': False, 'msg': f'Excel 생성 오류: {e}'})
 
         self._proxy('GET')
 
