@@ -22,8 +22,10 @@ for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":7777 " ^| findstr "LISTENIN
 )
 timeout /t 1 /nobreak > nul
 start "ACHRO-Proxy" /min cmd /c "cd /d "%~dp0" && python proxy.py"
-timeout /t 2 /nobreak > nul
-echo [OK] 프록시 서버 시작 완료
+
+:: 프록시 응답 대기 (최대 15초)
+echo [WAIT] 프록시 준비 대기 중...
+powershell -nologo -command "for($i=0;$i -lt 15;$i++){try{$r=(New-Object Net.WebClient).DownloadString('http://localhost:7777/ping');if($r -like '*ok*'){Write-Host '[OK] 프록시 준비 완료';exit 0}}catch{};Start-Sleep 1};Write-Host '[WARN] 프록시 응답 지연'"
 
 :: ── 자비스 서버 확인 (포트 5000) ─────────────────────────────────
 netstat -ano | findstr ":5000 " | findstr "LISTENING" > nul 2>&1
@@ -52,9 +54,9 @@ if "%LAST_RUN%"=="%TODAY%" (
     echo [OK] 브리핑 백그라운드 실행 중 (수 분 소요)
 )
 
-:: ── 브라우저에서 index.html 열기 ─────────────────────────────────
+:: ── 브라우저에서 GitHub Pages 열기 ──────────────────────────────
 echo [OPEN] 재고관리 시스템 브라우저 열기...
-start "" "%~dp0index.html"
+start "" "https://jinhan0310.github.io/achro/"
 
 echo.
 echo ACHRO 재고관리 시스템이 실행되었습니다.
