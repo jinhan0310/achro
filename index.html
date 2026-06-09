@@ -3913,10 +3913,11 @@ function renderVendorHistTable() {
       style="flex:1;background:none;border:none;color:var(--text);font-size:13px;padding:9px 0;outline:none">
   </div>
   <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap" id="om-status-filters"></div>
-  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
     <label style="font-size:12px;color:var(--text2);display:flex;align-items:center;gap:4px;cursor:pointer">
       <input type="checkbox" id="om-undoneOnly" onchange="omRender()"> 미완료만 보기
     </label>
+    <button id="om-chaengBtn" onclick="omToggleChaeng()" style="font-size:12px;padding:4px 12px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer">챙김 필터</button>
   </div>
   <div id="om-status" style="text-align:center;padding:40px;font-size:14px;color:var(--text2)">불러오기 버튼을 눌러주세요</div>
   <div id="om-list" style="display:flex;flex-direction:column;gap:12px"></div>
@@ -9425,7 +9426,8 @@ function settleSwitchTab(tab) {
 // ── 관리자 메모 모듈 ─────────────────────────────────────────────
 (function(){
   var _data = [];
-  var _activeStatus = '배송대기'; // 기본값
+  var _activeStatus = '배송대기';
+  var _chaengOnly = false;
   var STATUS_COLOR = {
     '배송대기':'#1976d2','상품준비중':'#f59e0b','배송중':'#7c3aed',
     '부분배송':'#9333ea','배송완료':'#2e7d52','구매확정':'#2e7d52',
@@ -9514,6 +9516,10 @@ function settleSwitchTab(tab) {
         var hasUndone = o.memos.some(function(m){ return m.isDone !== 'Y'; });
         if(!hasUndone) return false;
       }
+      if(_chaengOnly){
+        var hasChaeng = o.memos.some(function(m){ return m.memo.indexOf('챙겨놈') >= 0 || m.memo.indexOf('챙김') >= 0; });
+        if(!hasChaeng) return false;
+      }
       if(!q) return true;
       return (o.orderNo + o.orderer + o.memos.map(function(m){ return m.memo; }).join(' ')).toLowerCase().indexOf(q) >= 0;
     });
@@ -9594,6 +9600,18 @@ function settleSwitchTab(tab) {
         + '<div style="margin-top:10px">' + memosHtml + '</div>'
         + '</div>';
     }).join('');
+  };
+
+  window.omToggleChaeng = function(){
+    _chaengOnly = !_chaengOnly;
+    var btn = document.getElementById('om-chaengBtn');
+    if(btn){
+      btn.style.background = _chaengOnly ? '#1976d2' : 'var(--surface)';
+      btn.style.color = _chaengOnly ? '#fff' : 'var(--text2)';
+      btn.style.borderColor = _chaengOnly ? '#1976d2' : 'var(--border)';
+      btn.style.fontWeight = _chaengOnly ? '700' : '400';
+    }
+    omRender();
   };
 
   window.omToggle = function(uid){
