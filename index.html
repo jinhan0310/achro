@@ -1246,6 +1246,10 @@ function saveTx(d) {
 }
 function loadPrices() { try { return JSON.parse(localStorage.getItem(PK)||'{}'); } catch(e){ return {}; } }
 function savePrices(c){ localStorage.setItem(PK, JSON.stringify(c)); fbSavePrices(c); }
+var LP_KEY = 'achro_last_in_price';
+function loadLastInPrices() { try { return JSON.parse(localStorage.getItem(LP_KEY)||'{}'); } catch(e){ return {}; } }
+function saveLastInPrices(m){ localStorage.setItem(LP_KEY, JSON.stringify(m)); }
+window._lastInCode = null;
 
 function adjLoad()   { try { return JSON.parse(localStorage.getItem(ADJ_KEY)||'[]'); } catch(e){ return []; } }
 function adjSave(d)  { localStorage.setItem(ADJ_KEY, JSON.stringify(d)); fbSaveAdj(d); }
@@ -1307,6 +1311,15 @@ function buildAC(inpId, acId, prefix, cb) {
 
     if (!res.length) { ac.classList.remove('show'); return; }
 
+    // 입고등록: 마지막 입력 상품을 최상단에 (한 번만)
+    if (prefix === 'in' && window._lastInCode && !window._lastInTopUsed) {
+      var lastIdx = -1;
+      for (var li = 0; li < res.length; li++) {
+        if (res[li]['상품코드'] === window._lastInCode) { lastIdx = li; break; }
+      }
+      if (lastIdx > 0) { res.unshift(res.splice(lastIdx, 1)[0]); }
+    }
+
     var prices = loadPrices();
     var html = '';
     for (var j = 0; j < res.length; j++) {
@@ -1327,6 +1340,10 @@ function buildAC(inpId, acId, prefix, cb) {
     }
     ac.innerHTML = html;
     ac.classList.add('show');
+    // 마지막 상품이 최상단에 표시됐으면 플래그 세팅 (연속 입력 시 한 번만 상단)
+    if (prefix === 'in' && window._lastInCode && !window._lastInTopUsed && res.length && res[0]['상품코드'] === window._lastInCode) {
+      window._lastInTopUsed = true;
+    }
 
     var items = ac.querySelectorAll('.ac-item');
     for (var m = 0; m < items.length; m++) {
@@ -1362,8 +1379,18 @@ function selectProd(p, prefix, cb) {
   document.getElementById(prefix + '-vendor').value = p['거래처'];
   document.getElementById(prefix + '-vname').value  = p['거래처상품명'];
   document.getElementById(prefix + '-season').value = p['시즌'];
-  var ps = loadPrices()[p['상품코드']] || [];
-  if (ps.length) document.getElementById(prefix + '-price').value = ps[ps.length-1].toLocaleString('ko-KR');
+  var priceEl = document.getElementById(prefix + '-price');
+  if (priceEl) {
+    // 입고등록: 이 상품의 마지막 입력 단가 우선 사용
+    var lastInPrices = (prefix === 'in') ? loadLastInPrices() : {};
+    var lp = lastInPrices[p['상품코드']];
+    if (lp) {
+      priceEl.value = lp.toLocaleString('ko-KR');
+    } else {
+      var ps = loadPrices()[p['상품코드']] || [];
+      if (ps.length) priceEl.value = ps[ps.length-1].toLocaleString('ko-KR');
+    }
+  }
   if (cb) cb(p);
   var colorEl = document.getElementById(prefix + '-color');
   var sizeEl  = document.getElementById(prefix + '-size');
@@ -1435,6 +1462,10 @@ function submitIn() {
   var inColor=document.getElementById('in-color').value.trim();
   var inSize=document.getElementById('in-size').value.trim();
   addTx({ id:Date.now()+Math.random(), type:'in', code:code, name:prod?prod['상품명']:'', vendor:vendor, vname:vname, season:season, price:price, qty:qty, amount:price*qty, date:date, memo:memo, color:inColor, size:inSize, ts:new Date().toISOString() });
+  // 마지막 입고 상품 & 단가 저장
+  window._lastInCode = code;
+  window._lastInTopUsed = false;
+  var _lip = loadLastInPrices(); _lip[code] = price; saveLastInPrices(_lip);
   showAlert('in', code + ' x' + qty + '개  ₩' + fmt(price*qty) + '  입고 등록', 'ok');
   var ids = ['in-search','in-code','in-vendor','in-vname','in-season','in-price','in-memo','in-color','in-size'];
   for (var j = 0; j < ids.length; j++) document.getElementById(ids[j]).value = '';
