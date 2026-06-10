@@ -45,6 +45,8 @@ load_dotenv()
 ANTHROPIC_API_KEY  = os.getenv("ANTHROPIC_API_KEY")
 META_ACCESS_TOKEN  = os.getenv("META_ACCESS_TOKEN")
 META_AD_ACCOUNT_ID = os.getenv("META_AD_ACCOUNT_ID")
+META_APP_ID        = os.getenv("META_APP_ID")
+META_APP_SECRET    = os.getenv("META_APP_SECRET")
 KAKAO_ACCESS_TOKEN = os.getenv("KAKAO_ACCESS_TOKEN")
 IMWEB_API_KEY      = os.getenv("IMWEB_API_KEY")
 IMWEB_SECRET_KEY   = os.getenv("IMWEB_SECRET_KEY")
@@ -52,6 +54,44 @@ IMWEB_SECRET_KEY   = os.getenv("IMWEB_SECRET_KEY")
 if not all([ANTHROPIC_API_KEY, META_ACCESS_TOKEN, META_AD_ACCOUNT_ID]):
     print("[ERR] .env 파일에 ANTHROPIC_API_KEY, META_ACCESS_TOKEN, META_AD_ACCOUNT_ID 세 항목이 필요합니다.")
     sys.exit(1)
+
+
+def _refresh_meta_token():
+    """Meta 액세스 토큰을 자동으로 60일 연장하고 .env에 저장"""
+    global META_ACCESS_TOKEN
+    if not META_APP_ID or not META_APP_SECRET:
+        return
+    try:
+        resp = requests.get(
+            "https://graph.facebook.com/oauth/access_token",
+            params={
+                "grant_type":       "fb_exchange_token",
+                "client_id":        META_APP_ID,
+                "client_secret":    META_APP_SECRET,
+                "fb_exchange_token": META_ACCESS_TOKEN,
+            },
+            timeout=15,
+        )
+        data = resp.json()
+        new_token = data.get("access_token")
+        if not new_token:
+            print(f"  [WARN] 토큰 갱신 실패: {data.get('error', {}).get('message', data)}")
+            return
+        if new_token == META_ACCESS_TOKEN:
+            print("  [OK] Meta 토큰 유효 (갱신 불필요)")
+            return
+        # .env 파일에 새 토큰 저장
+        env_path = Path(__file__).parent / ".env"
+        env_text = env_path.read_text(encoding="utf-8")
+        env_text = __import__("re").sub(
+            r"META_ACCESS_TOKEN=.*", f"META_ACCESS_TOKEN={new_token}", env_text
+        )
+        env_path.write_text(env_text, encoding="utf-8")
+        META_ACCESS_TOKEN = new_token
+        os.environ["META_ACCESS_TOKEN"] = new_token
+        print("  [OK] Meta 토큰 자동 갱신 완료 (60일 연장, .env 저장됨)")
+    except Exception as e:
+        print(f"  [WARN] 토큰 갱신 중 오류 (기존 토큰 사용): {e}")
 
 # ── 날짜 ────────────────────────────────────────────────────────
 now        = datetime.now()
@@ -996,6 +1036,9 @@ def main():
     print("  아크로 쇼핑몰 Daily 브리핑")
     print(f"  기준일: {yesterday}")
     print("=" * 50)
+
+    print("\n[0/5] Meta 액세스 토큰 자동 갱신 중...")
+    _refresh_meta_token()
 
     print("\n[1/5] 메타광고 데이터 수집 중...")
     _meta_ok = True
