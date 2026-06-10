@@ -998,6 +998,7 @@ def main():
     print("=" * 50)
 
     print("\n[1/5] 메타광고 데이터 수집 중...")
+    _meta_ok = True
     try:
         account   = fetch_account_insights()
         campaigns = fetch_campaign_insights()
@@ -1007,8 +1008,9 @@ def main():
         print(f"  [OK] 활동 캠페인: {len(campaigns)}개")
         print(f"  [OK] 이번주 일별 데이터: {len(weekly)}일")
     except Exception as e:
-        print(f"  [ERR] Meta API 오류: {e}")
-        sys.exit(1)
+        print(f"  [WARN] Meta API 오류 (건너뜀 — 토큰 만료 확인 필요): {e}")
+        _meta_ok = False
+        account, campaigns, weekly = {}, [], []
 
     print("\n[2/5] 아임웹 실제 주문 수집 중...")
     imweb = None
@@ -1038,12 +1040,15 @@ def main():
         print(f"  [WARN] OMS 데이터 수집 실패 (브리핑은 계속): {_oms_e}")
 
     print("\n[3/5] Claude AI 분석 중...")
-    try:
-        analysis = get_claude_analysis(account, campaigns, weekly, imweb)
-        print("  [OK] 분석 완료")
-    except Exception as e:
-        print(f"  [ERR] Claude API 오류: {e}")
-        sys.exit(1)
+    analysis = {}
+    if _meta_ok or imweb:
+        try:
+            analysis = get_claude_analysis(account, campaigns, weekly, imweb)
+            print("  [OK] 분석 완료")
+        except Exception as e:
+            print(f"  [WARN] Claude API 오류 (건너뜀): {e}")
+    else:
+        print("  [SKIP] Meta·아임웹 데이터 없음 — 분석 생략")
 
     print("\n[3.5/5] 코드그라피 경쟁사 데이터 수집 중...")
     codegraphy_data = fetch_codegraphy()
