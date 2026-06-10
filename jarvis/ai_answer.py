@@ -4,6 +4,7 @@ DB에서 문맥 데이터를 읽어 간결한 카카오톡용 답변 생성
 """
 
 import os
+from datetime import datetime, timedelta, timezone
 import anthropic
 from dotenv import load_dotenv
 
@@ -13,6 +14,20 @@ _API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 def _client():
     return anthropic.Anthropic(api_key=_API_KEY)
+
+
+def _stale_note(date_str: str) -> str:
+    """데이터가 2일 이상 오래됐으면 경고 문자열 반환"""
+    try:
+        KST = timezone(timedelta(hours=9))
+        today = datetime.now(KST).date()
+        data_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        days_old = (today - data_date).days
+        if days_old >= 2:
+            return f"\n\n⚠️ {days_old}일 전 데이터 ({date_str})\nbriefing.py를 실행해야 최신 데이터가 조회됩니다."
+    except Exception:
+        pass
+    return ""
 
 
 def _ask(prompt: str, max_tokens: int = 350) -> str:
@@ -42,6 +57,7 @@ def answer_imweb(question: str, db) -> str:
             f"실제 매출: {latest['imweb_revenue']:,}원\n"
             f"객단가: {latest['imweb_aov']:,.0f}원\n"
             f"실제 ROAS: {latest['imweb_roas']}x"
+            + _stale_note(latest["date"])
         )
 
     days = len(stats)
@@ -83,6 +99,7 @@ def answer_meta(question: str, db) -> str:
             f"광고비: {int(latest['spend']):,}원\n"
             f"전환: {int(latest['meta_purchases']):,}건\n"
             f"CPA: {int(latest['meta_cpa']):,}원"
+            + _stale_note(latest["date"])
         )
 
     # 실제 보유 날짜 수로 레이블 결정
@@ -172,7 +189,9 @@ def answer_briefing(question: str, db) -> str:
     if analysis and analysis.get("overall_assessment"):
         lines += ["", "[AI 총평]", analysis["overall_assessment"]]
 
-    return "\n".join(lines)
+    result = "\n".join(lines)
+    result += _stale_note(s["date"])
+    return result
 
 
 def answer_products(question: str, db) -> str:
