@@ -1376,7 +1376,7 @@ function hlAC(items, i) {
 function selectProd(p, prefix, cb) {
   document.getElementById(prefix + '-search').value = p['상품코드'] + '  ·  ' + p['상품명'];
   document.getElementById(prefix + '-code').value   = p['상품코드'];
-  document.getElementById(prefix + '-vendor').value = p['거래처'];
+  document.getElementById(prefix + '-vendor').value = normalizeVendorName(p['거래처']);
   document.getElementById(prefix + '-vname').value  = p['거래처상품명'];
   document.getElementById(prefix + '-season').value = p['시즌'];
   var priceEl = document.getElementById(prefix + '-price');
@@ -1452,7 +1452,7 @@ function submitIn() {
   var qty    = parseInt(document.getElementById('in-qty').value)||1;
   var date   = document.getElementById('in-date').value || todayStr();
   var memo   = document.getElementById('in-memo').value;
-  var vendor = document.getElementById('in-vendor').value;
+  var vendor = normalizeVendorName(document.getElementById('in-vendor').value);
   var vname  = document.getElementById('in-vname').value;
   var season = document.getElementById('in-season').value;
   if (!code)    { showAlert('in','상품을 선택해주세요','err'); return; }
@@ -1578,7 +1578,7 @@ function submitSale() {
   var qty    = parseInt(document.getElementById('sale-qty').value)||1;
   var date   = document.getElementById('sale-date').value || todayStr();
   var memo   = document.getElementById('sale-memo').value;
-  var vendor = document.getElementById('sale-vendor').value;
+  var vendor = normalizeVendorName(document.getElementById('sale-vendor').value);
   var vname  = document.getElementById('sale-vname').value;
   var season = document.getElementById('sale-season').value;
   if (!code)    { showAlert('sale','상품을 선택해주세요','err'); return; }
@@ -1632,7 +1632,7 @@ function submitReturn() {
   var qty    = parseInt(document.getElementById('ret-qty').value)||1;
   var date   = document.getElementById('ret-date').value || todayStr();
   var memo   = document.getElementById('ret-memo').value;
-  var vendor = document.getElementById('ret-vendor').value;
+  var vendor = normalizeVendorName(document.getElementById('ret-vendor').value);
   var vname  = document.getElementById('ret-vname').value;
   var season = document.getElementById('ret-season').value;
   var retColor = document.getElementById('ret-color').value.trim();
@@ -2125,10 +2125,128 @@ function resolveVendorFromSearch() {
   return q;
 }
 
-// ── 거래처명 정규화 (공백 통일) ──
+// ── 거래처명 정규화 (공백 통일 + 표기 통합) ──
+var _VENDOR_MAP = {
+  // 남평화
+  '남평화2-89와이드':'남평화 2-89 와이드','남평화2-89 와이드':'남평화 2-89 와이드','남평화 2-89와이드':'남평화 2-89 와이드',
+  '남평화 2-89 WIDE 와이드':'남평화 2-89 와이드','남평화 2-89_WIDE 와이드':'남평화 2-89 와이드','남평화2-89_WIDE 와이드':'남평화 2-89 와이드',
+  '남평화 2 나 83 Sherpa 세르파':'남평화 2-83 세르파',
+  '남평화 2-74 시오 SIIO':'남평화 2-74 시오',
+  '남평화 2-151 THE DRAW 드로우':'남평화 2-151 드로우','남평화 2-95 FORCE(포스)':'남평화 2-95 포스',
+  '남평화 2-90 클레버 CLEVER':'남평화 2-90 클레버',
+  '남평화 2-119 심스 SIM\'S':'남평화 2-119 심스',
+  '남평화 2-156 graycode(그레이코드)':'남평화 2-156 그레이코드','남평화 2-23 BAU 바우':'남평화 2-23 바우',
+  '남평화 2-다-70 DON 돈':'남평화 2-70 돈',
+  '남평화 2-라-117 Slogan 슬로건':'남평화 2-117 슬로건','남평화2-라열-145_Slogan 슬로건':'남평화 2-117 슬로건',
+  '남평화 3-9 NONAME 노네임':'남평화 3-9 노네임',
+  '남평화 지하 A58, 168 알리바바':'남평화 지하 A58 알리바바',
+  // APM 4층
+  'APM 4-18 SWAG 스웨그':'APM 4-18 스웨그',
+  'APM4-30_Hestory 히스토리':'APM 4-30 히스토리','APM 4-30 Hestory 히스토리':'APM 4-30 히스토리','APM4-30_Hestory 히스토리':'APM 4-30 히스토리',
+  'APM4-36_RAIZ(라이즈)':'APM 4-36 라이즈','APM 4-36 RAIZ 라이즈':'APM 4-36 라이즈',
+  'APM 4-42 Nomade 노마드':'APM 4-42 노마드',
+  'APM 4-47 Well done 웰던':'APM 4-47 웰던','APM 4-49 Asnofit 아스노핏':'APM 4-49 아스노핏','APM 4-49 아스노핏 Asnofit':'APM 4-49 아스노핏',
+  'APM 4-5 XERON 제론':'APM 4-5 제론','APM 4-5 제론 XERON':'APM 4-5 제론',
+  'APM 4-6 Woogie 우기':'APM 4-6 우기','APM 4-6 Woogie(우기)':'APM 4-6 우기',
+  'APM 4-29 a.nd B 앤드비':'APM 4-29 앤드비','APM 4-16 Ballin 볼린':'APM 4-16 볼린','APM 4-28 MEAN 민':'APM 4-28 민',
+  'APM 4-41 론 Ron':'APM 4-41 론','APM 4-44 SPECTOR 스펙터':'APM 4-44 스펙터',
+  'APM 4-50 MEJOR 미즈올':'APM 4-50 미즈올','APM 4-52 ALLWAYS 올웨이즈':'APM 4-52 올웨이즈','APM 4-55 grass 그라스':'APM 4-55 그라스',
+  'APM 4-58 HAND 핸드':'APM 4-58 핸드','APM 4-63 도트 DOT.':'APM 4-63 도트',
+  'APM4-30_Hestory 히스토리':'APM 4-30 히스토리','APM4-36_RAIZ(라이즈)':'APM 4-36 라이즈',
+  'APM4-51 바이어텐션':'APM 6-51 바이어텐션',
+  // APM 5층
+  'APM 5-13 LILXWAVY 릴웨이비':'APM 5-13 릴웨이비','APM 5-14 EMAR 엠알':'APM 5-14 엠알',
+  'APM 5-19 PIONEER 파이오니아':'APM 5-19 파이오니아',
+  'APM 5-21 Veil 베일':'APM 5-21 베일','APM 5-21 veil 베일':'APM 5-21 베일','APM 5-21 베일 veil':'APM 5-21 베일',
+  'APM 5-22 GUYOT 기요':'APM 5-22 기요',
+  'APM 5-24 하이리스크 HiRisk':'APM 5-24 하이리스크','APM 5-24 하이리스크(HiRisk)':'APM 5-24 하이리스크',
+  'APM 5-26 NOKE 노크':'APM 5-26 노크','APM 5-27 EARN 언':'APM 5-27 언',
+  'APM 5-30 페퍼(피어) pepper':'APM 5-30 페퍼','APM 5-32 DUST 더스트':'APM 5-32 더스트',
+  'APM 5-41 FORCE 포스':'APM 5-41 포스','APM 5-46 DUDE 듀드':'APM 5-46 듀드',
+  'APM 5-58 saii 사이':'APM 5-58 사이','APM 5-61 LANE 라네':'APM 5-61 라네',
+  'APM 5-8 RIPEN 리펜':'APM 5-8 리펜',
+  // APM 6층
+  'APM 6-18 펄스 pulse':'APM 6-18 펄스',
+  'APM 6-19 ENTHRAL 엔트럴':'APM 6-19 엔트럴','APM 6-20 MOOD 무드':'APM 6-20 무드',
+  'APM 6-25 SEEOT 시옷':'APM 6-25 시옷',
+  'APM6-26_에픽칼러':'APM 6-26 에픽칼러','APM6-51 바이어텐션':'APM 6-51 바이어텐션',
+  'APM 6-29 VICE 바이스':'APM 6-29 바이스','APM 6-32 SB 스타일봉':'APM 6-32 스타일봉',
+  'APM 6-41 OWN 오운':'APM 6-41 오운',
+  'APM 6-48 Clear 클리어':'APM 6-48 클리어',
+  'APM 6-50 가더 GATHER':'APM 6-50 가더',
+  'APM 6-54 chalk 초크':'APM 6-54 초크','APM 6-4 ACRE GRIM 에이커그림':'APM 6-4 에이커그림',
+  'APM 6-646 I\'ll stage 아일스테이지':'APM 6-46 아일스테이지',
+  // APM 7층
+  'APM 7-13 Vass 바스':'APM 7-13 바스','APM 7-13-1 ALLOVER 올오버':'APM 7-13-1 올오버',
+  'APM 7-21 Noster 노스터':'APM 7-21 노스터','APM 7-21 노스터 Noster':'APM 7-21 노스터',
+  'APM 7-23 INDIGO 인디고':'APM 7-23 인디고','APM 7-23 INDIGO(인디고)':'APM 7-23 인디고',
+  'APM 7-24 CONCRETE 콘크리트':'APM 7-24 콘크리트',
+  'APM 7-25 wayne 웨인':'APM 7-25 웨인','APM 7-26 wayne 웨인':'APM 7-25 웨인','APM 7-27 wayne 웨인':'APM 7-25 웨인',
+  'APM 7-41 LEGIT 르젯':'APM 7-41 르젯','APM 7-45 Our Room 아워룸':'APM 7-45 아워룸','apm 7-45 아워룸':'APM 7-45 아워룸',
+  // 누죤
+  '누죤 3-504 무전 MUJEUN':'누죤 3-504 무전','누죤3-504 무전 MUJEUN':'누죤 3-504 무전','누죤3-504_무전(MUJEUN)':'누죤 3-504 무전',
+  '누죤 3-520 MAG 매그':'누죤 3-520 매그','누죤3-520_MAG 매그':'누죤 3-520 매그',
+  '누죤 3-611 OTHERFIT 아더핏':'누죤 3-611 아더핏',
+  '누죤 3-419 Gojean 고진':'누죤 3-419 고진','누죤 3-41 고진':'누죤 3-419 고진',
+  '누죤 3-414 DANEW 다뉴':'누죤 3-414 다뉴','누죤 3-414 다뉴 DANEW':'누죤 3-414 다뉴',
+  '누죤 3-407 COITSU 코이츠':'누죤 3-407 코이츠','누죤 3-319 AWAVE 어웨이브':'누죤 3-319 어웨이브',
+  '누죤 3-305 태그 TAG':'누죤 3-305 태그','누죤 4-617 PICAPI 피카피':'누죤 4-617 피카피',
+  '누죤 4-618 MARS 마스':'누죤 4-618 마스','누죤 4-701 NOIR 누아':'누죤 4-701 누아',
+  '누죤 4-713 코피 Ko.P':'누죤 4-713 코피','누죤 4-713_코피 Ko.P':'누죤 4-713 코피',
+  '누죤 4-910 이반 E.van':'누죤 4-910 이반','누죤 4-919 Muff 머프':'누죤 4-919 머프',
+  '누죤 4-920 ksubi 쿠스비':'누죤 4-920 쿠스비','누죤 4-909 디어반 Dear.Van':'누죤 4-909 디어반',
+  '누죤 5-112 18mm':'누죤 5-112 18미리','누죤 5-116 위어 WE\'RE':'누죤 5-116 위어',
+  '누죤 5-131 Low-cut 로우컷':'누죤 5-131 로우컷','누죤 5-209 웨더 weather':'누죤 5-209 웨더','누죤 5-209 웨더(weather)':'누죤 5-209 웨더',
+  '누죤 5-230 트렁크 Trunk':'누죤 5-230 트렁크','누죤 5-305 FLOOR&CO 플로어앤코':'누죤 5-305 플로어앤코',
+  '누죤 5-306 Vooshop 부샵':'누죤 5-306 부샵','누죤 5-308 Legacy 레거시':'누죤 5-308 레거시','누죤 5-308 legacy 레거시':'누죤 5-308 레거시',
+  '누죤 5-314 WAD 와드':'누죤 5-314 와드','누죤 5-316 데데 DEDE':'누죤 5-316 데데','누죤 5-317 DUST 더스트':'누죤 5-317 더스트',
+  '누죤 5-325 하디 Hardy':'누죤 5-325 하디','누죤 5-401 BURROW 버로우':'누죤 5-401 버로우','누죤 5-401 버로우 BURROW':'누죤 5-401 버로우',
+  '누죤 5-409 nuff nuff 너프너프':'누죤 5-409 너프너프','누죤 5-414 Drop 드랍':'누죤 5-414 드랍',
+  '누죤 5-504 Exito 엑시토':'누죤 5-504 엑시토','누죤 5-521 헨델(HENDEL)':'누죤 5-521 헨델',
+  '누죤 5-525 루웨이 Roue':'누죤 5-525 루웨이','누죤 5-527 구미 GUMI':'누죤 5-527 구미',
+  '누죤 5-614 샤론모자':'누죤 5-614 샤론',
+  '누죤 6-101 S# 에스샵':'누죤 6-101 에스샵','누죤6-101_S#(에스샵)S-SHOP':'누죤 6-101 에스샵',
+  '누죤 6-105 딜리 Dilly':'누죤 6-105 딜리','누죤 6-108 ORDA 오르다':'누죤 6-108 오르다',
+  '누죤 6-116 마틴서울 MartinSeoul':'누죤 6-116 마틴서울','누죤 6-121 ALIVE 얼라이브':'누죤 6-121 얼라이브',
+  '누죤 6-127 Hamel 하멜':'누죤 6-127 하멜',
+  '누죤 6-202 page 페이지':'누죤 6-202 페이지','누죤 6-204 Y(와이브랜드)':'누죤 6-204 와이브랜드',
+  '누죤 6-206 호스피텔 로비':'누죤 6-206 호스피텔로비','누죤 6-214 WISE 와이즈':'누죤 6-214 와이즈',
+  '누죤 6-220 ieum 이음':'누죤 6-220 이음','누죤 6-222 아베크디자인':'누죤 6-221 아베크디자인',
+  '누죤 6-223 투 레빗':'누죤 6-223 투레빗','누죤 6-225 노바 NOVA':'누죤 6-225 노바',
+  '누죤 6-306 Wiyuu 위유':'누죤 6-306 위유','누죤 6-309 LUIRE 루이르':'누죤 6-309 루이르',
+  '누죤 6-314 unbon 언본':'누죤 6-314 언본','누죤 6-315 cuff 커프':'누죤 6-315 커프',
+  '누죤 6-324 FARRELL 파렐':'누죤 6-324 파렐','누죤 6-405 ailla 아일라':'누죤 6-405 아일라',
+  '누죤 6-413 HOXY 혹시':'누죤 6-413 혹시',
+  '누죤 6-426 그로우 GROW':'누죤 6-426 그로우','누죤 6-511 MANDERLY 맨덜리':'누죤 6-511 맨덜리',
+  '누죤 6-512 midori':'누죤 6-512 미도리','누죤 6-512 midori 미도리':'누죤 6-512 미도리',
+  '누죤 6-516 퍼센트.b %':'누죤 6-516 퍼센트비','누죤 6-513 퍼센트비':'누죤 6-513 퍼센트비',
+  '누죤 6-518 시티딜리버리맨':'누죤 6-518 시티딜리버리맨','누죤6-518_시티딜리버리맨':'누죤 6-518 시티딜리버리맨',
+  '누죤 6-521 Wit and Wonder':'누죤 6-521 위트앤원더','누죤6-521 위트앤원더':'누죤 6-521 위트앤원더',
+  '누죤 6-523 LOWER48 로어48':'누죤 6-523 로어48',
+  '누죤 6-601 RAYBLE 레이블':'누죤 6-601 레이블','누죤6-601 RAYBLE 레이블':'누죤 6-601 레이블',
+  '누죤6-525 Grab 그랩':'누죤 6-525 그랩',
+  '누죤 지하1-109 LEVAIN 르방':'누죤 지하1-109 르방',
+  // 벨포스트
+  '벨포 2-64 시그니쳐':'벨포스트 2-64 시그니쳐','벨포스트 2-64 SIGNATURE 시그니쳐':'벨포스트 2-64 시그니쳐',
+  '벨포스트 2-64 시그니처 SIGNATURE':'벨포스트 2-64 시그니쳐','벨포스트 2-64 시그니처':'벨포스트 2-64 시그니쳐',
+  '벨포스트 3-20 이든 EDEN':'벨포스트 3-20 이든','벨포스트 3-57 HAUT 하우트':'벨포스트 3-57 하우트',
+  '벨포스트3-57 HAUT':'벨포스트 3-57 하우트','벨포스트3-57 HAUT 하우트':'벨포스트 3-57 하우트',
+  '벨포스트 3-59 BROWN 브라운':'벨포스트 3-59 브라운','벨포스트 3-59 BROWN(브라운)':'벨포스트 3-59 브라운',
+  '벨포스트 3-70 MAZINO 마지노':'벨포스트 3-70 마지노','벨포스트3-33 V$S 빈스':'벨포스트 3-33 빈스',
+  // 디오트
+  '디오트 B1 C-06 니코니코':'디오트 B1-C06 니코니코','디오트 B1 F-14 BANHAT 반햇':'디오트 B1-F14 반햇',
+};
 function normalizeVendorName(v) {
-  // 연속 공백 제거, 앞뒤 공백 제거
-  return v.replace(/\s+/g, ' ').trim();
+  if (!v) return v;
+  // 1. 정확히 알려진 형태 먼저 매핑
+  if (_VENDOR_MAP[v]) return _VENDOR_MAP[v];
+  // 2. 알고리즘 정규화 (구조적 문제 처리)
+  v = v.replace(/_/g, ' ');                          // 밑줄 → 공백
+  v = v.replace(/([가-힣A-Za-z])(\d)/g, '$1 $2');   // 한글/영문-숫자 사이 공백
+  v = v.replace(/\(([^)]+)\)/g, ' $1');             // (괄호내용) → 공백+내용
+  v = v.replace(/\s+/g, ' ').trim();
+  // 3. 정규화 후 다시 매핑 시도
+  return _VENDOR_MAP[v] || v;
 }
 
 function mergeVendor(fromName, toName) {
@@ -8892,15 +9010,10 @@ function settleSwitchTab(tab) {
 <script>
 // ── 거래처명 자동 정규화 (파일 로드 시 1회 실행) ──
 (function normalizeVendorNames() {
-  var VENDOR_MAP = {
-    '남평화2-89와이드':    '남평화 2-89 와이드',
-    '남평화2-89 와이드':   '남평화 2-89 와이드',
-    '남평화 2-89와이드':   '남평화 2-89 와이드',
-  };
   var SK = 'achro_tx4';
   var MINUS_KEY = 'achro_minus_v1';
   var PAY_KEY   = 'achro_payment_v1';
-  function fixVendor(v) { return VENDOR_MAP[v] || v; }
+  function fixVendor(v) { return normalizeVendorName(v||''); }
   try {
     var txs = JSON.parse(localStorage.getItem(SK)||'[]');
     var changed = false;
