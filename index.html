@@ -148,11 +148,11 @@ async function fbLoadAll() {
     if (doc.exists) {
       var d = doc.data();
       if (d.pmData && d.pmData.length) {
+        // 인메모리만 즉시 반영, localStorage 쓰기 + 렌더는 비동기로
         pmData = d.pmData; window.pmData = pmData; window._masterProducts = pmData;
-        localStorage.setItem(PM_KEY, JSON.stringify(pmData));
         _pmDirty = true;
-        // 1153개 상품 렌더는 첫 paint 후 실행 (동기 실행 시 10초 블로킹)
         setTimeout(function() {
+          localStorage.setItem(PM_KEY, JSON.stringify(pmData));
           if (typeof pmUpdateStats === 'function') pmUpdateStats();
           if (typeof pmRenderSeasonTabs === 'function') pmRenderSeasonTabs();
           if (typeof pmRenderTable === 'function') pmRenderTable();
@@ -160,8 +160,11 @@ async function fbLoadAll() {
         }, 0);
       }
       if (d.spData && d.spData.length) {
-        spData = d.spData; localStorage.setItem(SP_KEY, JSON.stringify(spData));
-        setTimeout(function() { if (typeof spRender === 'function') spRender(); }, 0);
+        spData = d.spData;
+        setTimeout(function() {
+          localStorage.setItem(SP_KEY, JSON.stringify(spData));
+          if (typeof spRender === 'function') spRender();
+        }, 0);
       }
     }
     // 정산 데이터 문서
@@ -169,10 +172,11 @@ async function fbLoadAll() {
     var st = document.getElementById('fb-sync-status');
     if (dataDoc.exists) {
       var dd = dataDoc.data();
+      // localStorage 쓰기를 비동기로 — JSON.stringify + setItem이 메인 스레드 블로킹 원인
       var _set = function(key, val) {
         if (val !== undefined && val !== null) {
-          localStorage.setItem(key, JSON.stringify(val));
-          if (key === SK) _txCache = null; // Firebase 데이터로 덮어쓸 때 캐시 무효화
+          if (key === SK) _txCache = val; // 캐시 즉시 반영
+          setTimeout(function() { localStorage.setItem(key, JSON.stringify(val)); }, 0);
         }
       };
       // achro_tx4는 로컬이 더 최신이면 Firebase가 덮어쓰지 않음 (새로고침 시 데이터 유실 방지)
@@ -194,7 +198,6 @@ async function fbLoadAll() {
       _set('achro_history',    dd.history);
       _set('achro_vendors',    dd.vendors);
       _set('achro_ib_history', dd.ibHistory);
-      // 데이터만 저장, 렌더는 해당 탭을 열 때 처리 (Firebase 로드 시 즉시 렌더 제거)
       if (st) { st.textContent = '✓ 동기화 완료'; setTimeout(function(){ st.textContent=''; }, 3000); }
     } else {
       // Firebase에 데이터 없음 → 이 기기의 데이터가 있으면 자동 업로드
