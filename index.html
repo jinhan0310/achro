@@ -8144,86 +8144,80 @@ function pmGetFiltered(){
   return data;
 }
 
+var _pmRenderGen = 0; // 이전 청크 렌더링 취소용 세대 카운터
 function pmRenderTable(){
+  var gen = ++_pmRenderGen;
   var data = pmGetFiltered();
   var container = document.getElementById('pm-table-container');
   if(data.length===0){ container.innerHTML='<div style="text-align:center;padding:48px;color:var(--text3);">데이터가 없습니다</div>'; return; }
 
-  // TO(상의)/BO(하의)/AC(악세) 분류 — 최신등록 순(역순)
-  // 품번 숫자 기준 내림차순 정렬 → 가장 최근 등록 품번이 맨 위
   const sortByCode = (a,b) => b.code.localeCompare(a.code, undefined, {numeric:true});
   const toData = [...data].filter(d=>/TO/i.test(d.code)).sort(sortByCode);
   const boData = [...data].filter(d=>/BO/i.test(d.code)).sort(sortByCode);
   const acData = [...data].filter(d=>/AC/i.test(d.code)).sort(sortByCode);
   const etcData= [...data].filter(d=>!/TO|BO|AC/i.test(d.code)).sort(sortByCode);
 
-  function rowHtml(item, side){
-    if(!item) return `<td colspan="3" style="background:var(--bg);border:none;"></td>`;
-    return `
-      <td class="pm-code">${item.code}</td>
-      <td><strong>${item.name}</strong><br><span style="font-size:11px;color:var(--text2);">${item.vendorName}</span></td>
-      <td>
-        <span style="font-size:12px;">${item.vendor}</span><br>
-        <span class="pm-badge season">${item.season}</span>
-      </td>
-    `;
+  function sectionHead(ll, lc, rl, rc){
+    return `<div style="margin-bottom:8px;display:flex;gap:4px;align-items:center;">
+      <span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;">${ll}</span>
+      <span style="font-size:11px;color:var(--text3);">(${lc})</span>
+      <span style="margin:0 8px;color:var(--border2);">|</span>
+      <span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;">${rl}</span>
+      <span style="font-size:11px;color:var(--text3);">(${rc})</span>
+    </div>`;
   }
-
-  function twoColTable(leftArr, rightArr, leftLabel, rightLabel){
-    const maxLen = Math.max(leftArr.length, rightArr.length);
-    if(maxLen===0) return '';
-    var html=`
-      <div style="margin-bottom:8px;display:flex;gap:4px;align-items:center;">
-        <span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;">${leftLabel}</span>
-        <span style="font-size:11px;color:var(--text3);">(${leftArr.length})</span>
-        <span style="margin:0 8px;color:var(--border2);">|</span>
-        <span style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;">${rightLabel}</span>
-        <span style="font-size:11px;color:var(--text3);">(${rightArr.length})</span>
-      </div>
-      <div style="overflow:hidden;border:1px solid var(--border);border-radius:10px;margin-bottom:20px;">
+  function tableShell(tbodyId){
+    return `<div style="overflow:hidden;border:1px solid var(--border);border-radius:10px;margin-bottom:20px;">
       <table style="width:100%;border-collapse:collapse;">
       <colgroup><col style="width:12%"><col style="width:22%"><col style="width:16%"><col style="width:2%;background:var(--border);"><col style="width:12%"><col style="width:22%"><col style="width:14%"></colgroup>
       <thead><tr>
-        <th style="background:var(--surface2);">품번</th>
-        <th style="background:var(--surface2);">상품명</th>
-        <th style="background:var(--surface2);">거래처</th>
+        <th style="background:var(--surface2);">품번</th><th style="background:var(--surface2);">상품명</th><th style="background:var(--surface2);">거래처</th>
         <th style="background:var(--border);padding:0;"></th>
-        <th style="background:var(--surface2);">품번</th>
-        <th style="background:var(--surface2);">상품명</th>
-        <th style="background:var(--surface2);">거래처</th>
-      </tr></thead><tbody>`;
-
-    for(var i=0;i<maxLen;i++){
-      const L=leftArr[i], R=rightArr[i];
-      html+=`<tr>`;
-      if(L){
-        html+=`<td class="pm-code" style="cursor:pointer;" onclick="pmOpenEdit('${L.code}')">${L.code}</td>
-               <td><strong>${L.name}</strong><br><span style="font-size:11px;color:var(--text2);">${L.vendorName}</span></td>
-               <td><span style="font-size:12px;">${L.vendor}</span></td>`;
-      } else {
-        html+=`<td colspan="3" style="background:var(--bg);"></td>`;
-      }
-      html+=`<td style="background:var(--border);padding:0;width:2px;"></td>`;
-      if(R){
-        html+=`<td class="pm-code" style="cursor:pointer;" onclick="pmOpenEdit('${R.code}')">${R.code}</td>
-               <td><strong>${R.name}</strong><br><span style="font-size:11px;color:var(--text2);">${R.vendorName}</span></td>
-               <td><span style="font-size:12px;">${R.vendor}</span></td>`;
-      } else {
-        html+=`<td colspan="3" style="background:var(--bg);"></td>`;
-      }
-      html+=`</tr>`;
-    }
-    html+=`</tbody></table></div>`;
-    return html;
+        <th style="background:var(--surface2);">품번</th><th style="background:var(--surface2);">상품명</th><th style="background:var(--surface2);">거래처</th>
+      </tr></thead><tbody id="${tbodyId}"></tbody></table></div>`;
   }
 
-  var html = '';
-  if(toData.length>0||boData.length>0)
-    html += twoColTable(toData, boData, '상의 (TO)', '하의 (BO)');
-  if(acData.length>0||etcData.length>0)
-    html += twoColTable(acData, etcData, '악세 (AC)', '기타');
+  // 테이블 껍데기만 즉시 렌더 (행 없이) → DOM 즉시 반응
+  var shellHtml = '';
+  if(toData.length>0||boData.length>0) shellHtml += sectionHead('상의 (TO)',toData.length,'하의 (BO)',boData.length) + tableShell('_pm_tb1');
+  if(acData.length>0||etcData.length>0) shellHtml += sectionHead('악세 (AC)',acData.length,'기타',etcData.length) + tableShell('_pm_tb2');
+  container.innerHTML = shellHtml;
 
-  container.innerHTML = html;
+  // 행 HTML 생성 (40개씩)
+  function rowsHtml(LA, RA, from, to){
+    var h='';
+    for(var i=from;i<to;i++){
+      var L=LA[i], R=RA[i];
+      h+='<tr>';
+      if(L) h+=`<td class="pm-code" style="cursor:pointer;" onclick="pmOpenEdit('${L.code}')">${L.code}</td><td><strong>${L.name}</strong><br><span style="font-size:11px;color:var(--text2);">${L.vendorName}</span></td><td><span style="font-size:12px;">${L.vendor}</span></td>`;
+      else h+='<td colspan="3" style="background:var(--bg);"></td>';
+      h+='<td style="background:var(--border);padding:0;width:2px;"></td>';
+      if(R) h+=`<td class="pm-code" style="cursor:pointer;" onclick="pmOpenEdit('${R.code}')">${R.code}</td><td><strong>${R.name}</strong><br><span style="font-size:11px;color:var(--text2);">${R.vendorName}</span></td><td><span style="font-size:12px;">${R.vendor}</span></td>`;
+      else h+='<td colspan="3" style="background:var(--bg);"></td>';
+      h+='</tr>';
+    }
+    return h;
+  }
+
+  // requestAnimationFrame으로 프레임마다 40행씩 삽입 → 메인스레드 블로킹 0
+  function chunkRender(LA, RA, tbodyId, onDone){
+    var tbody=document.getElementById(tbodyId);
+    if(!tbody){ if(onDone) onDone(); return; }
+    var maxLen=Math.max(LA.length, RA.length), idx=0;
+    function next(){
+      if(gen!==_pmRenderGen) return; // 검색 등으로 새 렌더가 시작됐으면 취소
+      var end=Math.min(idx+40, maxLen);
+      if(idx<end){ tbody.insertAdjacentHTML('beforeend', rowsHtml(LA,RA,idx,end)); idx=end; }
+      if(idx<maxLen) requestAnimationFrame(next);
+      else if(onDone) onDone();
+    }
+    requestAnimationFrame(next);
+  }
+
+  chunkRender(toData, boData, '_pm_tb1', function(){
+    if(gen!==_pmRenderGen) return;
+    chunkRender(acData, etcData, '_pm_tb2', null);
+  });
 }
 
 // ── 자동완성 (이벤트 위임) ──
