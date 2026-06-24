@@ -142,6 +142,10 @@ async function fbSaveSP() {
 // ── Firestore 불러오기 ──
 async function fbLoadAll() {
   if (!_fbUser) return;
+  // 브라우저가 완전히 쉴 때만 localStorage 쓰기 → 메인스레드 블로킹 완전 제거
+  var _idleWrite = window.requestIdleCallback
+    ? function(fn) { requestIdleCallback(fn, { timeout: 8000 }); }
+    : function(fn) { setTimeout(fn, 300); };
   try {
     // 메인 문서 (pmData, spData)
     var doc = await _db.collection('achro').doc(_fbUser.uid).get();
@@ -152,20 +156,16 @@ async function fbLoadAll() {
         pmData = d.pmData; window.pmData = pmData; window._masterProducts = pmData;
         _pmDirty = true;
         _pmTableDirty = true; // 상품코드 탭 재진입 시 재렌더 예약
-        // localStorage 쓰기 + 가벼운 통계만 비동기 처리 (pmRenderTable은 10초 블로킹 원인이므로 제거)
-        setTimeout(function() {
-          localStorage.setItem(PM_KEY, JSON.stringify(pmData));
-          if (typeof pmUpdateStats === 'function') pmUpdateStats();
-          if (typeof pmRenderSeasonTabs === 'function') pmRenderSeasonTabs();
-          if (typeof pmRefreshAll === 'function') { pmRefreshAll(); _pmDirty = false; }
-        }, 0);
+        // localStorage 쓰기는 idle 시점에, pmRefreshAll은 가볍게 바로
+        _idleWrite(function() { localStorage.setItem(PM_KEY, JSON.stringify(pmData)); });
+        if (typeof pmUpdateStats === 'function') pmUpdateStats();
+        if (typeof pmRenderSeasonTabs === 'function') pmRenderSeasonTabs();
+        if (typeof pmRefreshAll === 'function') { pmRefreshAll(); _pmDirty = false; }
       }
       if (d.spData && d.spData.length) {
         spData = d.spData;
-        setTimeout(function() {
-          localStorage.setItem(SP_KEY, JSON.stringify(spData));
-          if (typeof spRender === 'function') spRender();
-        }, 0);
+        _idleWrite(function() { localStorage.setItem(SP_KEY, JSON.stringify(spData)); });
+        if (typeof spRender === 'function') spRender();
       }
     }
     // 정산 데이터 문서
@@ -173,11 +173,10 @@ async function fbLoadAll() {
     var st = document.getElementById('fb-sync-status');
     if (dataDoc.exists) {
       var dd = dataDoc.data();
-      // localStorage 쓰기를 비동기로 — JSON.stringify + setItem이 메인 스레드 블로킹 원인
       var _set = function(key, val) {
         if (val !== undefined && val !== null) {
           if (key === SK) _txCache = val; // 캐시 즉시 반영
-          setTimeout(function() { localStorage.setItem(key, JSON.stringify(val)); }, 0);
+          _idleWrite(function() { localStorage.setItem(key, JSON.stringify(val)); });
         }
       };
       // achro_tx4는 로컬이 더 최신이면 Firebase가 덮어쓰지 않음 (새로고침 시 데이터 유실 방지)
@@ -4364,13 +4363,18 @@ function refreshAll() {
 // ══════════════════════════════
 var _pmDirty = true;     // pmData 변경 시 true → 다음 탭 전환 때 pmRefreshAll 실행
 var _pmTableDirty = false; // Firebase 업데이트 후 상품코드 탭 재진입 시 pmRenderTable 실행
+var _currentPageName = 'master'; // 현재 활성 페이지 추적 (DOM 최소 터치용)
 
 // ── 재고현황 행 클릭 ──
 function goPage(name, el) {
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  // 전체 querySelectorAll 대신 현재 활성 페이지만 비활성화 → 스타일 재계산 최소화
+  var _prevPg = document.getElementById('page-' + _currentPageName);
+  if(_prevPg) _prevPg.classList.remove('active');
   var _ps = document.getElementById('page-settle');
   if(_ps) _ps.style.display='none';
-  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
+  var _prevBtn = document.querySelector('.nav-btn.active');
+  if(_prevBtn) _prevBtn.classList.remove('active');
+  _currentPageName = name;
   var _pg = document.getElementById('page-'+name);
   if(_pg){
     if(name==='settle') _pg.style.display='block';
@@ -8962,9 +8966,12 @@ document.getElementById('oc-editor-bg').addEventListener('click', function(e){ i
 // ── 정산관리 초기화 ──
 // 상단 nav에서 정산관리 특정 서브탭으로 직접 이동
 function goPageSettle(el, subTab) {
-  document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('active'); });
-  document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
+  var _prevPg2 = document.getElementById('page-' + _currentPageName);
+  if(_prevPg2) _prevPg2.classList.remove('active');
+  var _prevBtn2 = document.querySelector('.nav-btn.active');
+  if(_prevBtn2) _prevBtn2.classList.remove('active');
   var _ps2=document.getElementById('page-settle'); if(_ps2) _ps2.style.display='block';
+  _currentPageName = 'settle';
   el.classList.add('active');
   if(typeof pmRefreshAll === 'function' && _pmDirty) { pmRefreshAll(); _pmDirty = false; }
   PRODUCT_DB = buildSettleProductDB();
