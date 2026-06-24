@@ -148,14 +148,15 @@ async function fbLoadAll() {
     if (doc.exists) {
       var d = doc.data();
       if (d.pmData && d.pmData.length) {
-        // 인메모리만 즉시 반영, localStorage 쓰기 + 렌더는 비동기로
+        // 인메모리만 즉시 반영
         pmData = d.pmData; window.pmData = pmData; window._masterProducts = pmData;
         _pmDirty = true;
+        _pmTableDirty = true; // 상품코드 탭 재진입 시 재렌더 예약
+        // localStorage 쓰기 + 가벼운 통계만 비동기 처리 (pmRenderTable은 10초 블로킹 원인이므로 제거)
         setTimeout(function() {
           localStorage.setItem(PM_KEY, JSON.stringify(pmData));
           if (typeof pmUpdateStats === 'function') pmUpdateStats();
           if (typeof pmRenderSeasonTabs === 'function') pmRenderSeasonTabs();
-          if (typeof pmRenderTable === 'function') pmRenderTable();
           if (typeof pmRefreshAll === 'function') { pmRefreshAll(); _pmDirty = false; }
         }, 0);
       }
@@ -4361,7 +4362,8 @@ function refreshAll() {
 // ══════════════════════════════
 // NAVIGATION
 // ══════════════════════════════
-var _pmDirty = true; // pmData 변경 시 true → 다음 탭 전환 때 pmRefreshAll 실행
+var _pmDirty = true;     // pmData 변경 시 true → 다음 탭 전환 때 pmRefreshAll 실행
+var _pmTableDirty = false; // Firebase 업데이트 후 상품코드 탭 재진입 시 pmRenderTable 실행
 
 // ── 재고현황 행 클릭 ──
 function goPage(name, el) {
@@ -4384,6 +4386,10 @@ function goPage(name, el) {
   }
   // pmData 변경 시에만 갱신 (탭 전환마다 1153개 재처리 방지)
   if(typeof pmRefreshAll === 'function' && _pmDirty) { pmRefreshAll(); _pmDirty = false; }
+  // 상품코드 탭: Firebase 업데이트 후 재진입 시에만 테이블 재렌더
+  if(name === 'master' && _pmTableDirty) {
+    setTimeout(function(){ if(typeof pmRenderTable==='function') pmRenderTable(); _pmTableDirty=false; }, 0);
+  }
   if(name === 'settle') {
     PRODUCT_DB = buildSettleProductDB();
     if(typeof settleInit === 'function') settleInit();
