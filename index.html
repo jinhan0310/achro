@@ -150,11 +150,18 @@ async function fbLoadAll() {
       if (d.pmData && d.pmData.length) {
         pmData = d.pmData; window.pmData = pmData; window._masterProducts = pmData;
         localStorage.setItem(PM_KEY, JSON.stringify(pmData));
-        if (typeof pmUpdateStats === 'function') { pmUpdateStats(); pmRenderSeasonTabs(); pmRenderTable(); pmRefreshAll(); }
+        _pmDirty = true;
+        // 1153개 상품 렌더는 첫 paint 후 실행 (동기 실행 시 10초 블로킹)
+        setTimeout(function() {
+          if (typeof pmUpdateStats === 'function') pmUpdateStats();
+          if (typeof pmRenderSeasonTabs === 'function') pmRenderSeasonTabs();
+          if (typeof pmRenderTable === 'function') pmRenderTable();
+          if (typeof pmRefreshAll === 'function') { pmRefreshAll(); _pmDirty = false; }
+        }, 0);
       }
       if (d.spData && d.spData.length) {
         spData = d.spData; localStorage.setItem(SP_KEY, JSON.stringify(spData));
-        if (typeof spRender === 'function') spRender();
+        setTimeout(function() { if (typeof spRender === 'function') spRender(); }, 0);
       }
     }
     // 정산 데이터 문서
@@ -4383,22 +4390,25 @@ function goPage(name, el) {
     PRODUCT_DB = buildSettleProductDB();
     if(!_settleInited){ _settleInited=true; if(typeof initIn==='function') initIn(); if(typeof initSale==='function') initSale(); }
     else if(typeof initIn==='function') initIn();
-    if(typeof renderIn==='function') renderIn();
-    updateSettleHeader();
+    setTimeout(function(){ if(typeof renderIn==='function') renderIn(); updateSettleHeader(); }, 0);
   }
   if(name === 'pagereg') {
     PRODUCT_DB = buildSettleProductDB();
     if(!_settleInited){ _settleInited=true; if(typeof initIn==='function') initIn(); if(typeof initSale==='function') initSale(); }
     else if(typeof initSale==='function') initSale();
-    if(typeof renderSale==='function') renderSale();
-    if(typeof renderReturn==='function') renderReturn();
-    updateSettleHeader();
+    setTimeout(function(){
+      if(typeof renderSale==='function') renderSale();
+      if(typeof renderReturn==='function') renderReturn();
+      updateSettleHeader();
+    }, 0);
   }
   if(name === 'pagestock') {
     PRODUCT_DB = buildSettleProductDB();
     if(!_settleInited){ _settleInited=true; if(typeof initIn==='function') initIn(); }
-    if(typeof fillSeasons==='function') fillSeasons();
-    if(typeof renderStock==='function') renderStock();
+    setTimeout(function(){
+      if(typeof fillSeasons==='function') fillSeasons();
+      if(typeof renderStock==='function') renderStock();
+    }, 0);
   }
   if(name === 'customers') {
     if(typeof cmInit === 'function') cmInit();
@@ -8997,8 +9007,8 @@ function settleSwitchTab(tab) {
   var pageEl = document.getElementById(targetPage);
   if(pageEl) pageEl.style.display = 'block';
 
-  // 렌더링
-  if(tab==='vendor') { if(typeof renderVendorLedger==='function') renderVendorLedger(); }
+  // 렌더링 (무거운 렌더는 paint 후 실행)
+  if(tab==='vendor') { setTimeout(function(){ if(typeof renderVendorLedger==='function') renderVendorLedger(); }, 0); }
   if(tab==='sale')   { if(typeof renderSale==='function') renderSale(); if(typeof renderReturn==='function') renderReturn(); }
   if(tab==='stock')  { if(typeof fillSeasons==='function') fillSeasons(); if(typeof renderStock==='function') renderStock(); }
   if(tab==='hist')   { if(typeof initHistory==='function') initHistory(); }
