@@ -162,10 +162,10 @@ async function fbLoadAll() {
     var st = document.getElementById('fb-sync-status');
     if (dataDoc.exists) {
       var dd = dataDoc.data();
-      var _set = function(key, val, refresh) {
+      var _set = function(key, val) {
         if (val !== undefined && val !== null) {
           localStorage.setItem(key, JSON.stringify(val));
-          if (refresh) try { refresh(); } catch(e) {}
+          if (key === SK) _txCache = null; // Firebase 데이터로 덮어쓸 때 캐시 무효화
         }
       };
       // achro_tx4는 로컬이 더 최신이면 Firebase가 덮어쓰지 않음 (새로고침 시 데이터 유실 방지)
@@ -173,21 +173,21 @@ async function fbLoadAll() {
       var localTime = localStorage.getItem(SK + '_saved_at');
       var skipTx = fbTxTime && localTime && localTime > fbTxTime;
       if (!skipTx) {
-        _set('achro_tx4', dd.txData, function(){ if(typeof renderVendorLedger==='function') renderVendorLedger(); if(typeof renderLedger==='function') renderLedger(); });
+        _set('achro_tx4', dd.txData);
       } else {
         // 로컬이 더 최신 → Firebase에 즉시 업로드해서 동기화
         if (typeof fbSaveTx === 'function') fbSaveTx(loadTx());
-        try { if(typeof renderVendorLedger==='function') renderVendorLedger(); if(typeof renderLedger==='function') renderLedger(); } catch(e) {}
       }
       _set('achro_price4',     dd.priceData);
       _set('achro_adj2',       dd.adjData);
-      _set('achro_minus_v1',   dd.minusData, function(){ if(typeof renderVendorLedger==='function') renderVendorLedger(); });
-      _set('achro_payment_v1', dd.payData,   function(){ if(typeof renderVendorLedger==='function') renderVendorLedger(); });
+      _set('achro_minus_v1',   dd.minusData);
+      _set('achro_payment_v1', dd.payData);
       _set('achro_vat_vendors',dd.vatData);
       _set('achro_products',   dd.products);
       _set('achro_history',    dd.history);
       _set('achro_vendors',    dd.vendors);
       _set('achro_ib_history', dd.ibHistory);
+      // 데이터만 저장, 렌더는 해당 탭을 열 때 처리 (Firebase 로드 시 즉시 렌더 제거)
       if (st) { st.textContent = '✓ 동기화 완료'; setTimeout(function(){ st.textContent=''; }, 3000); }
     } else {
       // Firebase에 데이터 없음 → 이 기기의 데이터가 있으면 자동 업로드
@@ -684,14 +684,8 @@ select option { background: #fff; }
   box-shadow: 0 1px 6px rgba(30,50,100,0.07), 0 0 0 1px rgba(30,50,100,0.05);
 }
 
-/* ── 자비스 채팅 탭 ── */
-#page-jarvis { display:none; padding:0; height:calc(100vh - 56px); overflow:hidden; }
-#page-jarvis.active { display:flex; flex-direction:column; }
-#jarvis-wrap { display:flex; flex-direction:column; height:100%; max-width:820px; margin:0 auto; width:100%; padding:0 20px 16px; }
-#jarvis-head { display:flex; align-items:center; justify-content:space-between; padding:18px 2px 10px; }
-#jarvis-head-title { font-size:17px; font-weight:700; color:var(--accent); display:flex; align-items:center; gap:8px; }
-#jarvis-status { font-size:11px; padding:3px 10px; border-radius:20px; background:#e8f5e9; color:#2e7d32; font-weight:600; letter-spacing:0.3px; }
-#jarvis-status.offline { background:#fce4ec; color:#c62828; }
+/* ── 자비스 채팅 탭 (제거됨) ── */
+#page-jarvis { display:none!important; }
 #jarvis-quick { display:flex; gap:8px; flex-wrap:wrap; padding-bottom:12px; border-bottom:1px solid var(--border); margin-bottom:0; }
 .j-quick-btn { padding:6px 15px; border-radius:20px; border:1px solid var(--accent); color:var(--accent); background:#fff; font-size:13px; cursor:pointer; transition:all 0.15s; font-family:inherit; font-weight:500; }
 .j-quick-btn:hover { background:var(--accent); color:#fff; }
@@ -763,14 +757,12 @@ select option { background: #fff; }
   <button class="nav-btn" onclick="goPage('inreg',this)">입고등록</button>
   <button class="nav-btn" id="nav-btn-sale" onclick="goPageSettle(this,'sale')">판매등록</button>
   <button class="nav-btn" id="nav-btn-stock" onclick="goPageSettle(this,'stock')">재고현황</button>
-  <button class="nav-btn" onclick="goPage('jarvis',this)">🤖 자비스</button>
   <button class="nav-btn" onclick="goPage('customers',this)">고객관리</button>
-  <button class="nav-btn" onclick="goPage('ordermemo',this)">관리자메모</button>
   <div id="fb-user-bar" style="display:none;align-items:center;gap:8px;margin-left:auto;padding:0 8px;"></div>
 </nav>
 
-<!-- ── 자비스 AI 채팅 ── -->
-<div class="page" id="page-jarvis">
+<!-- ── 자비스 탭 제거됨 ── -->
+<div class="page" id="page-jarvis" style="display:none!important">
   <div id="jarvis-wrap">
     <div id="jarvis-head">
       <div id="jarvis-head-title">🤖 자비스 AI 어시스턴트</div>
@@ -1237,8 +1229,14 @@ var PAY_KEY   = 'achro_payment_v1';
 var VAT_KEY   = 'achro_vat_vendors'; // 부가세 포함 거래처 목록
 var LS_KEY  = 'achro_settle5';
 
-function loadTx()     { try { return JSON.parse(localStorage.getItem(SK)||'[]'); }  catch(e){ return []; } }
+var _txCache = null;
+function loadTx() {
+  if (_txCache !== null) return _txCache;
+  try { _txCache = JSON.parse(localStorage.getItem(SK)||'[]'); } catch(e) { _txCache = []; }
+  return _txCache;
+}
 function saveTx(d) {
+  _txCache = d;
   localStorage.setItem(SK, JSON.stringify(d));
   localStorage.setItem(SK + '_saved_at', new Date().toISOString());
   ['achro_tx3','achro_tx2','achro_tx_v2'].forEach(function(k){ localStorage.removeItem(k); });
@@ -3357,13 +3355,8 @@ function toggleAdjList(){
 
 window.addEventListener('DOMContentLoaded', function() {
   function _try(name,fn){try{fn();}catch(e){console.error(name,e);}}
-  _try('initIn', initIn);
-  _try('initAdj', initAdj);
-  _try('initSale', initSale);
-  _try('initHistory', initHistory);
+  // 헤더는 즉시 갱신 (첫 화면에 표시됨)
   _try('updateHeader', updateHeader);
-  _try('initLedger', initLedger);
-  _try('stockInit', function(){ fillSeasons(); renderStock(); });
   document.addEventListener('click', function(e){
     var fac=document.getElementById('float-ac');
     var hs=document.getElementById('hist-search');
@@ -3372,7 +3365,16 @@ window.addEventListener('DOMContentLoaded', function() {
     var ac2=document.getElementById('ls-vendor-ac');
     if(ac2&&!ac2.contains(e.target)&&e.target.id!=='ls-vendor-input') ac2.classList.remove('show');
   });
-  loadProductsFromFirebase();
+  // 비활성 탭 init은 첫 렌더링 후 실행해 시작 시 멈춤 방지
+  setTimeout(function() {
+    _try('initIn', initIn);
+    _try('initAdj', initAdj);
+    _try('initSale', initSale);
+    _try('initHistory', initHistory);
+    _try('initLedger', initLedger);
+    _try('stockInit', function(){ fillSeasons(); renderStock(); });
+    loadProductsFromFirebase();
+  }, 0);
 });
 
 </script>
@@ -4046,9 +4048,9 @@ function renderVendorHistTable() {
 </div>
 
 <!-- ════════════════════════════
-     관리자 메모 조회
+     관리자 메모 탭 제거됨
 ════════════════════════════ -->
-<div class="page" id="page-ordermemo">
+<div class="page" id="page-ordermemo" style="display:none!important">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
     <div class="sec-title">관리자 메모</div>
     <div style="display:flex;gap:8px;align-items:center">
@@ -4349,6 +4351,7 @@ function refreshAll() {
 // ══════════════════════════════
 // NAVIGATION
 // ══════════════════════════════
+var _pmDirty = true; // pmData 변경 시 true → 다음 탭 전환 때 pmRefreshAll 실행
 
 // ── 재고현황 행 클릭 ──
 function goPage(name, el) {
@@ -4369,8 +4372,8 @@ function goPage(name, el) {
   } else {
     if(typeof spUpdateTodayCount === 'function') spUpdateTodayCount();
   }
-  // 상품코드탭 데이터를 항상 다른 탭에 반영
-  if(typeof pmRefreshAll === 'function') pmRefreshAll();
+  // pmData 변경 시에만 갱신 (탭 전환마다 1153개 재처리 방지)
+  if(typeof pmRefreshAll === 'function' && _pmDirty) { pmRefreshAll(); _pmDirty = false; }
   if(name === 'settle') {
     PRODUCT_DB = buildSettleProductDB();
     if(typeof settleInit === 'function') settleInit();
@@ -4397,15 +4400,8 @@ function goPage(name, el) {
     if(typeof fillSeasons==='function') fillSeasons();
     if(typeof renderStock==='function') renderStock();
   }
-  if(name === 'jarvis') {
-    jCheckStatus();
-    setTimeout(function(){ var i=document.getElementById('jarvis-input'); if(i) i.focus(); }, 100);
-  }
   if(name === 'customers') {
     if(typeof cmInit === 'function') cmInit();
-  }
-  if(name === 'ordermemo') {
-    // 자동 로드하지 않음 — 버튼 클릭 시 로드
   }
   refreshAll();
 }
@@ -8053,6 +8049,7 @@ function pmLoad(){
   return PM_INITIAL.map(d=>({...d}));
 }
 function pmSave(){
+  _pmDirty = true;
   window.pmData = pmData;
   window._masterProducts = pmData;
   try {
@@ -8514,6 +8511,7 @@ window.pmRefreshAll=function(){
   if (spBrandDl) {
     spBrandDl.innerHTML = pmVendors.map(function(v){ return '<option value="'+v+'">'; }).join('');
   }
+  _pmDirty = false;
 };
 
 // 검색
@@ -8949,7 +8947,7 @@ function goPageSettle(el, subTab) {
   document.querySelectorAll('.nav-btn').forEach(function(b){ b.classList.remove('active'); });
   var _ps2=document.getElementById('page-settle'); if(_ps2) _ps2.style.display='block';
   el.classList.add('active');
-  if(typeof pmRefreshAll === 'function') pmRefreshAll();
+  if(typeof pmRefreshAll === 'function' && _pmDirty) { pmRefreshAll(); _pmDirty = false; }
   PRODUCT_DB = buildSettleProductDB();
   if(!_settleInited){ _settleInited=true; if(typeof initIn==='function') initIn(); if(typeof initSale==='function') initSale(); }
 
