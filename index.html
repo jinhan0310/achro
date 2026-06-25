@@ -1014,7 +1014,7 @@ select option { background: #fff; }
   <!-- 거래처별 뷰 -->
   <div id="lview-vendor" style="display:block;">
     <!-- KPI 카드 -->
-    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:20px;">
+    <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px;">
       <div class="kpi-card kpi-clickable" onclick="openKpiModal('prev')" title="업체별 전잔 보기">
         <div class="kpi-label">전잔 <span style="font-size:9px;opacity:.4;font-weight:400;letter-spacing:0;">▼ 업체별</span></div>
         <div class="kpi-value kv-orange" id="l-prev">&#8361;0</div>
@@ -1024,6 +1024,11 @@ select option { background: #fff; }
         <div class="kpi-label">오늘 입고금액 <span style="font-size:9px;opacity:.4;font-weight:400;letter-spacing:0;">▼ 업체별</span></div>
         <div class="kpi-value kv-dark" id="l-today">&#8361;0</div>
         <div class="kpi-sub" id="l-today-cnt">0건</div>
+      </div>
+      <div class="kpi-card kpi-clickable" onclick="openKpiModal('pay')" title="오늘 입금처리 업체별 보기" style="border-left-color:#2e7d52;">
+        <div class="kpi-label">오늘 입금 <span style="font-size:9px;opacity:.4;font-weight:400;letter-spacing:0;">▼ 업체별</span></div>
+        <div class="kpi-value" style="color:#2e7d52;" id="l-pay">&#8361;0</div>
+        <div class="kpi-sub" id="l-pay-cnt">0건</div>
       </div>
       <div class="kpi-card kpi-clickable" onclick="openKpiModal('total')" title="업체별 최종잔 보기">
         <div class="kpi-label">최종잔 <span style="font-size:9px;opacity:.4;font-weight:400;letter-spacing:0;">▼ 업체별</span></div>
@@ -2281,6 +2286,58 @@ function mergeVendor(fromName, toName) {
 
 
 function openKpiModal(type) {
+  if (type === 'pay') {
+    var _today = todayStr();
+    var _pays = (typeof loadPayments === 'function' ? loadPayments() : []).filter(function(p){ return p.date === _today; });
+    var _vendorMap = {};
+    _pays.forEach(function(p){
+      if (!_vendorMap[p.vendor]) _vendorMap[p.vendor] = [];
+      _vendorMap[p.vendor].push(p);
+    });
+    var _vendors = Object.keys(_vendorMap).sort(function(a,b){ return a.localeCompare(b,'ko'); });
+    var _total = _pays.reduce(function(s,p){ return s+p.amount; },0);
+    var _html = '';
+    _vendors.forEach(function(v, vi){
+      var vPays = _vendorMap[v];
+      var vTotal = vPays.reduce(function(s,p){ return s+p.amount; },0);
+      var key = 'pay'+vi;
+      _html += '<tr class="kpi-vrow" data-kpi-key="'+key+'" style="border-bottom:1px solid #f0ece8;background:#fafaf8;cursor:pointer;">'
+        + '<td style="padding:10px 16px;color:#1a1814;font-weight:600;">'
+        + '<span id="kpi-arr-'+key+'" style="display:inline-block;font-size:9px;margin-right:4px;transition:transform .15s;">▶</span>'
+        + v + '</td>'
+        + '<td style="padding:10px 16px;text-align:right;font-family:\'DM Mono\',monospace;font-weight:500;color:#2e7d52;">₩'+fmt(vTotal)+'</td>'
+        + '<td style="padding:10px 8px;"></td>'
+        + '</tr>';
+      vPays.forEach(function(p){
+        var desc = (p.memo ? p.memo : '입금') ;
+        _html += '<tr class="kpi-drow" data-kpi-key="'+key+'" style="display:none;border-bottom:1px solid #f0ece8;background:#f6fbf8;">'
+          + '<td style="padding:5px 16px 5px 30px;font-size:11px;color:#2e7d52;">'+desc+'</td>'
+          + '<td style="padding:5px 16px;text-align:right;font-size:12px;font-family:\'DM Mono\',monospace;color:#2e7d52;">₩'+fmt(p.amount)+'</td>'
+          + '<td style="padding:5px 8px;"></td>'
+          + '</tr>';
+      });
+    });
+    document.getElementById('kpi-modal-title').textContent = '오늘 입금 처리 내역';
+    document.getElementById('kpi-modal-col-header').textContent = '입금액';
+    var tbody = document.getElementById('kpi-modal-body');
+    tbody.innerHTML = _html || '<tr><td colspan="3" style="padding:24px;text-align:center;color:#aaa;">오늘 입금 내역이 없습니다</td></tr>';
+    document.getElementById('kpi-modal-count').textContent = _vendors.length + '개 거래처 · ' + _pays.length + '건';
+    document.getElementById('kpi-modal-total').textContent = '합계 ₩' + fmt(_total);
+    document.getElementById('kpi-modal-bg').style.display = 'flex';
+    tbody.onclick = function(e) {
+      var vrow = e.target.closest('.kpi-vrow');
+      if (vrow) {
+        var key = vrow.dataset.kpiKey;
+        var drows = tbody.querySelectorAll('.kpi-drow[data-kpi-key="'+key+'"]');
+        var isOpen = drows.length && drows[0].style.display !== 'none';
+        drows.forEach(function(r){ r.style.display = isOpen ? 'none' : ''; });
+        var arr = document.getElementById('kpi-arr-'+key);
+        if (arr) arr.style.transform = isOpen ? '' : 'rotate(90deg)';
+      }
+    };
+    return;
+  }
+
   window._kpiCurrentType = type;
   var txs = loadTx();
   var minus = loadMinus();
@@ -2469,11 +2526,16 @@ function renderVendorLedger(searchQ) {
     var pays=(typeof loadPayments==='function'?loadPayments():[]);
     var totPay=pays.reduce(function(s,p){return s+p.amount;},0);
     var prevPay=pays.filter(function(p){return p.date<_d;}).reduce(function(s,p){return s+p.amount;},0);
+    var todayPays=pays.filter(function(p){return p.date===_d;});
+    var todayPayAmt=todayPays.reduce(function(s,p){return s+p.amount;},0);
+    var todayPayVendors=todayPays.map(function(p){return p.vendor;}).filter(function(v,i,a){return a.indexOf(v)===i;}).length;
     var el;
     el=document.getElementById('l-prev');   if(el) el.textContent='₩'+fmt(pIn-pMinus-prevPay);
     el=document.getElementById('l-prev-sub');if(el) el.textContent='입고₩'+fmt(pIn)+(pMinus?'−반품₩'+fmt(pMinus):'');
     el=document.getElementById('l-today');  if(el) el.textContent='₩'+fmt(tIn-tMinus);
     el=document.getElementById('l-today-cnt');if(el) el.textContent=tInC+'건'+(tMinus?' (−₩'+fmt(tMinus)+')':'');
+    el=document.getElementById('l-pay');    if(el) el.textContent='₩'+fmt(todayPayAmt);
+    el=document.getElementById('l-pay-cnt');if(el) el.textContent=todayPayVendors+'개 거래처 · '+todayPays.length+'건';
     el=document.getElementById('l-total');  if(el) el.textContent='₩'+fmt(aIn-totMinus-totPay);
     el=document.getElementById('l-total-sub');if(el) el.textContent='입고₩'+fmt(aIn)+(totMinus?'−반품₩'+fmt(totMinus):'');
   })();
