@@ -2003,8 +2003,9 @@ function dlSettleExcel() {
     Object.keys(md).forEach(function(dt){ if(dt<today) prevMinus+=md[dt]; else if(dt===today) todayMinus+=md[dt]; });
     var prevPay  = pays.filter(function(p){return p.date<today;}).reduce(function(s,p){return s+p.amount;},0);
     var todayPay = pays.filter(function(p){return p.date===today;}).reduce(function(s,p){return s+p.amount;},0);
-    var 전잔 = prevIn - prevMinus - prevPay;
+    var prevInV  = isVat ? Math.round(prevIn*1.1) : prevIn;
     var todayInV = isVat ? Math.round(todayIn*1.1) : todayIn;
+    var 전잔 = prevInV - prevMinus - prevPay;
     var 최종잔 = 전잔 + todayInV - todayMinus - todayPay;
     return [v, isVat?'Y':'', 전잔, todayInV, todayMinus, todayPay, 최종잔];
   }).filter(function(r){ return r[2]!==0||r[3]!==0||r[6]!==0; });
@@ -2317,9 +2318,11 @@ function openKpiModal(type) {
     var pays = payments.filter(function(p) { return p.vendor === v; });
     var prevPay = pays.filter(function(p) { return p.date < today; }).reduce(function(s, p) { return s + p.amount; }, 0);
     var todayPay = pays.filter(function(p) { return p.date === today; }).reduce(function(s, p) { return s + p.amount; }, 0);
-    var 전잔 = vd.prevIn - md.prevMinus - prevPay;
-    var 최종잔 = 전잔 + vd.todayIn - md.todayMinus - todayPay;
-    var val = type === 'prev' ? 전잔 : type === 'today' ? vd.todayIn - md.todayMinus : 최종잔;
+    var prevInV  = isVat ? Math.round(vd.prevIn*1.1) : vd.prevIn;
+    var todayInV = isVat ? Math.round(vd.todayIn*1.1) : vd.todayIn;
+    var 전잔 = prevInV - md.prevMinus - prevPay;
+    var 최종잔 = 전잔 + todayInV - md.todayMinus - todayPay;
+    var val = type === 'prev' ? 전잔 : type === 'today' ? todayInV - md.todayMinus : 최종잔;
 
     var vendorTxs = [];
     var vendorMinus = [];
@@ -2555,8 +2558,9 @@ function renderVendorLedger(searchQ) {
     // 전잔: 전일까지 입고 - 전일까지 마이너스 - 전일까지 입금
     var prevPay = pays.filter(function(p){ return p.date < today; }).reduce(function(s,p){ return s+p.amount; },0);
     var todayPay = pays.filter(function(p){ return p.date === today; }).reduce(function(s,p){ return s+p.amount; },0);
-    var 전잔    = prevIn - prevMinus - prevPay;
+    var prevInV  = isVat ? Math.round(prevIn*1.1) : prevIn;
     var todayInV = isVat ? Math.round(todayIn*1.1) : todayIn;
+    var 전잔    = prevInV - prevMinus - prevPay;
     var 당잔    = todayInV;
     var 최종잔  = 전잔 + todayInV - todayMinus - todayPay;
     var 실잔    = 최종잔;
