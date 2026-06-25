@@ -1045,6 +1045,7 @@ select option { background: #fff; }
         </div>
         <button class="btn btn-dark btn-sm" onclick="openMinusModal('minus', resolveVendorFromSearch())">－ 마이너스 등록</button>
         <button class="btn btn-sm" style="background:#2e7d52;color:#fff;border:none;" onclick="openMinusModal('plus', resolveVendorFromSearch())">＋ 플러스 등록</button>
+        <button class="btn btn-outline btn-sm" id="btn-vat-only" onclick="toggleVatOnlyFilter()" style="white-space:nowrap;">부가세매장만</button>
         <button class="btn btn-outline btn-sm" onclick="renderVendorLedger()">새로고침</button>
         <button class="btn btn-outline btn-sm" onclick="openMergeModal()">거래처 통합</button>
         <button class="btn btn-outline btn-sm" onclick="dlSettleExcel()" style="white-space:nowrap;">⬇ 엑셀 다운로드</button>
@@ -2116,6 +2117,17 @@ function filterVendorList() {
   renderVendorLedger(q);
 }
 
+function toggleVatOnlyFilter() {
+  window._vatOnlyFilter = !window._vatOnlyFilter;
+  var btn = document.getElementById('btn-vat-only');
+  if (btn) {
+    btn.style.background = window._vatOnlyFilter ? '#e8622a' : '';
+    btn.style.color = window._vatOnlyFilter ? '#fff' : '';
+    btn.style.borderColor = window._vatOnlyFilter ? '#e8622a' : '';
+  }
+  renderVendorLedger();
+}
+
 function resolveVendorFromSearch() {
   // 펼쳐진 거래처 카드가 있으면 최우선 반환
   if (window._lastExpandedVendor) return window._lastExpandedVendor;
@@ -2596,6 +2608,7 @@ function renderVendorLedger(searchQ) {
   var showVendors = vendors.filter(function(v){
     if (_sq && !matchChosung(_sq, v)) return false;
     if (filterV && v !== filterV) return false;
+    if (window._vatOnlyFilter && vatVendors.indexOf(v) < 0) return false;
     return true;
   });
 
