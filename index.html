@@ -2285,56 +2285,64 @@ function mergeVendor(fromName, toName) {
 }
 
 
+function renderPayKpiList(date) {
+  var _pays = (typeof loadPayments === 'function' ? loadPayments() : []).filter(function(p){ return p.date === date; });
+  var _vendorMap = {};
+  _pays.forEach(function(p){
+    if (!_vendorMap[p.vendor]) _vendorMap[p.vendor] = [];
+    _vendorMap[p.vendor].push(p);
+  });
+  var _vendors = Object.keys(_vendorMap).sort(function(a,b){ return a.localeCompare(b,'ko'); });
+  var _total = _pays.reduce(function(s,p){ return s+p.amount; },0);
+  var _html = '';
+  _vendors.forEach(function(v, vi){
+    var vPays = _vendorMap[v];
+    var vTotal = vPays.reduce(function(s,p){ return s+p.amount; },0);
+    var key = 'pay'+vi;
+    _html += '<tr class="kpi-vrow" data-kpi-key="'+key+'" style="border-bottom:1px solid #f0ece8;background:#fafaf8;cursor:pointer;">'
+      + '<td style="padding:10px 16px;color:#1a1814;font-weight:600;">'
+      + '<span id="kpi-arr-'+key+'" style="display:inline-block;font-size:9px;margin-right:4px;transition:transform .15s;">▶</span>'
+      + v + '</td>'
+      + '<td style="padding:10px 16px;text-align:right;font-family:\'DM Mono\',monospace;font-weight:500;color:#2e7d52;">₩'+fmt(vTotal)+'</td>'
+      + '<td style="padding:10px 8px;"></td>'
+      + '</tr>';
+    vPays.forEach(function(p){
+      var desc = p.memo ? p.memo : '입금';
+      _html += '<tr class="kpi-drow" data-kpi-key="'+key+'" style="display:none;border-bottom:1px solid #f0ece8;background:#f6fbf8;">'
+        + '<td style="padding:5px 16px 5px 30px;font-size:11px;color:#2e7d52;">'+desc+'</td>'
+        + '<td style="padding:5px 16px;text-align:right;font-size:12px;font-family:\'DM Mono\',monospace;color:#2e7d52;">₩'+fmt(p.amount)+'</td>'
+        + '<td style="padding:5px 8px;"></td>'
+        + '</tr>';
+    });
+  });
+  var tbody = document.getElementById('kpi-modal-body');
+  tbody.innerHTML = _html || '<tr><td colspan="3" style="padding:24px;text-align:center;color:#aaa;">해당 날짜 입금 내역이 없습니다</td></tr>';
+  document.getElementById('kpi-modal-count').textContent = _vendors.length + '개 거래처 · ' + _pays.length + '건';
+  document.getElementById('kpi-modal-total').textContent = '합계 ₩' + fmt(_total);
+  tbody.onclick = function(e) {
+    var vrow = e.target.closest('.kpi-vrow');
+    if (vrow) {
+      var key = vrow.dataset.kpiKey;
+      var drows = tbody.querySelectorAll('.kpi-drow[data-kpi-key="'+key+'"]');
+      var isOpen = drows.length && drows[0].style.display !== 'none';
+      drows.forEach(function(r){ r.style.display = isOpen ? 'none' : ''; });
+      var arr = document.getElementById('kpi-arr-'+key);
+      if (arr) arr.style.transform = isOpen ? '' : 'rotate(90deg)';
+    }
+  };
+}
+
 function openKpiModal(type) {
   if (type === 'pay') {
     var _today = todayStr();
-    var _pays = (typeof loadPayments === 'function' ? loadPayments() : []).filter(function(p){ return p.date === _today; });
-    var _vendorMap = {};
-    _pays.forEach(function(p){
-      if (!_vendorMap[p.vendor]) _vendorMap[p.vendor] = [];
-      _vendorMap[p.vendor].push(p);
-    });
-    var _vendors = Object.keys(_vendorMap).sort(function(a,b){ return a.localeCompare(b,'ko'); });
-    var _total = _pays.reduce(function(s,p){ return s+p.amount; },0);
-    var _html = '';
-    _vendors.forEach(function(v, vi){
-      var vPays = _vendorMap[v];
-      var vTotal = vPays.reduce(function(s,p){ return s+p.amount; },0);
-      var key = 'pay'+vi;
-      _html += '<tr class="kpi-vrow" data-kpi-key="'+key+'" style="border-bottom:1px solid #f0ece8;background:#fafaf8;cursor:pointer;">'
-        + '<td style="padding:10px 16px;color:#1a1814;font-weight:600;">'
-        + '<span id="kpi-arr-'+key+'" style="display:inline-block;font-size:9px;margin-right:4px;transition:transform .15s;">▶</span>'
-        + v + '</td>'
-        + '<td style="padding:10px 16px;text-align:right;font-family:\'DM Mono\',monospace;font-weight:500;color:#2e7d52;">₩'+fmt(vTotal)+'</td>'
-        + '<td style="padding:10px 8px;"></td>'
-        + '</tr>';
-      vPays.forEach(function(p){
-        var desc = (p.memo ? p.memo : '입금') ;
-        _html += '<tr class="kpi-drow" data-kpi-key="'+key+'" style="display:none;border-bottom:1px solid #f0ece8;background:#f6fbf8;">'
-          + '<td style="padding:5px 16px 5px 30px;font-size:11px;color:#2e7d52;">'+desc+'</td>'
-          + '<td style="padding:5px 16px;text-align:right;font-size:12px;font-family:\'DM Mono\',monospace;color:#2e7d52;">₩'+fmt(p.amount)+'</td>'
-          + '<td style="padding:5px 8px;"></td>'
-          + '</tr>';
-      });
-    });
-    document.getElementById('kpi-modal-title').textContent = '오늘 입금 처리 내역';
+    document.getElementById('kpi-modal-title').textContent = '입금 처리 내역';
     document.getElementById('kpi-modal-col-header').textContent = '입금액';
-    var tbody = document.getElementById('kpi-modal-body');
-    tbody.innerHTML = _html || '<tr><td colspan="3" style="padding:24px;text-align:center;color:#aaa;">오늘 입금 내역이 없습니다</td></tr>';
-    document.getElementById('kpi-modal-count').textContent = _vendors.length + '개 거래처 · ' + _pays.length + '건';
-    document.getElementById('kpi-modal-total').textContent = '합계 ₩' + fmt(_total);
+    var dateRow = document.getElementById('kpi-modal-date-row');
+    dateRow.style.display = 'block';
+    var dateInput = document.getElementById('kpi-modal-date');
+    dateInput.value = _today;
+    renderPayKpiList(_today);
     document.getElementById('kpi-modal-bg').style.display = 'flex';
-    tbody.onclick = function(e) {
-      var vrow = e.target.closest('.kpi-vrow');
-      if (vrow) {
-        var key = vrow.dataset.kpiKey;
-        var drows = tbody.querySelectorAll('.kpi-drow[data-kpi-key="'+key+'"]');
-        var isOpen = drows.length && drows[0].style.display !== 'none';
-        drows.forEach(function(r){ r.style.display = isOpen ? 'none' : ''; });
-        var arr = document.getElementById('kpi-arr-'+key);
-        if (arr) arr.style.transform = isOpen ? '' : 'rotate(90deg)';
-      }
-    };
     return;
   }
 
@@ -2475,6 +2483,7 @@ function openKpiModal(type) {
 }
 function closeKpiModal() {
   document.getElementById('kpi-modal-bg').style.display = 'none';
+  document.getElementById('kpi-modal-date-row').style.display = 'none';
 }
 
 function openMergeModal() {
@@ -3575,6 +3584,10 @@ window.addEventListener('DOMContentLoaded', function() {
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #e2ddd8;flex-shrink:0;">
       <span id="kpi-modal-title" style="font-weight:700;font-size:13px;"></span>
       <button type="button" onclick="closeKpiModal()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#6b6560;">✕</button>
+    </div>
+    <div id="kpi-modal-date-row" style="display:none;padding:10px 20px;border-bottom:1px solid #e2ddd8;background:#f7f5f2;flex-shrink:0;display:none;">
+      <label style="font-size:11px;color:#888;margin-right:8px;font-weight:600;">날짜 선택</label>
+      <input type="date" id="kpi-modal-date" onchange="renderPayKpiList(this.value)" style="padding:5px 10px;border:1px solid #ccc8c2;border-radius:7px;font-size:12px;font-family:inherit;">
     </div>
     <div style="overflow-y:auto;flex:1;">
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
