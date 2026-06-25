@@ -2105,6 +2105,7 @@ function switchLedgerSub(tab) {
 // ── 거래처별 정산 렌더링 ──
 
 function filterVendorList() {
+  window._lastExpandedVendor = null;
   var q = document.getElementById('vled-search').value.trim().toLowerCase();
   renderVendorLedger(q);
 }
