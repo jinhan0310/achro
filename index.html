@@ -2586,7 +2586,26 @@ function renderVendorLedger(searchQ) {
     mMap[m.vendor].byDate[m.date].push(m);
   });
 
-  var vendors = Object.keys(vMap).sort(function(a,b){ return a.localeCompare(b,'ko'); });
+  // PRODUCT_DB에 등록된 거래처는 이번달 거래가 없어도 반투명으로 항상 표시
+  PRODUCT_DB.forEach(function(p) {
+    var v = p['거래처'];
+    if (v && !vMap[v]) {
+      vMap[v] = { byDate:{}, total:0, dbOnly:true };
+    }
+  });
+  // 입금 기록만 있는 거래처도 포함
+  payments.forEach(function(p) {
+    if (p.vendor && !vMap[p.vendor]) {
+      vMap[p.vendor] = { byDate:{}, total:0, dbOnly:true };
+    }
+  });
+
+  var vendors = Object.keys(vMap).sort(function(a,b){
+    var aDb = vMap[a].dbOnly ? 1 : 0;
+    var bDb = vMap[b].dbOnly ? 1 : 0;
+    if (aDb !== bDb) return aDb - bDb;
+    return a.localeCompare(b,'ko');
+  });
 
   // 셀렉트 갱신
   var sel = document.getElementById('vled-vendor');
@@ -2621,6 +2640,7 @@ function renderVendorLedger(searchQ) {
   showVendors.forEach(function(v) {
     var vd  = vMap[v] || { byDate:{} };
     var md  = mMap[v] || { byDate:{} };
+    var dbOnly = !!vd.dbOnly;
     var isVat = vatVendors.indexOf(v) >= 0;
     var pays  = payments.filter(function(p){ return p.vendor===v; });
     var totalPay = pays.reduce(function(s,p){ return s+p.amount; },0);
@@ -2648,7 +2668,7 @@ function renderVendorLedger(searchQ) {
     var 당잔    = todayInV;
     var 최종잔  = 전잔 + todayInV - todayMinus - todayPay;
     var 실잔    = 최종잔;
-    var isComplete = 최종잔 <= 0;
+    var isComplete = 최종잔 <= 0 || dbOnly;
 
     // 날짜 목록 (최신순)
     var allDates = Object.keys(vd.byDate).concat(Object.keys(md.byDate))
@@ -2659,7 +2679,7 @@ function renderVendorLedger(searchQ) {
     html += '<div class="vl-card" data-vendor="'+encodeURIComponent(v)+'" style="'
       + 'border:1px solid var(--border);border-radius:14px;margin-bottom:12px;'
       + 'overflow:hidden;transition:box-shadow .15s;'
-      + (isComplete ? 'opacity:0.7;' : '')
+      + (dbOnly ? 'opacity:0.45;' : isComplete ? 'opacity:0.7;' : '')
       + '">';
 
     // 클릭 가능한 헤더 행
@@ -2674,7 +2694,8 @@ function renderVendorLedger(searchQ) {
     html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
     html += '<span class="vendor-name-btn" data-vnd="'+encodeURIComponent(v)+'" style="font-weight:700;font-size:14px;color:var(--accent);text-decoration:underline;text-underline-offset:3px;cursor:pointer;">'+v+'</span>';
     if (isVat) html += '<span style="font-size:10px;padding:2px 7px;background:#e8622a;color:#fff;border-radius:8px;font-weight:700;">부가세포함</span>';
-    if (isComplete) html += '<span style="font-size:10px;padding:2px 8px;background:#2e7d52;color:#fff;border-radius:8px;font-weight:700;">✓ 완납</span>';
+    if (dbOnly) html += '<span style="font-size:10px;padding:2px 8px;background:#b0aba5;color:#fff;border-radius:8px;font-weight:700;">거래없음</span>';
+    else if (isComplete) html += '<span style="font-size:10px;padding:2px 8px;background:#2e7d52;color:#fff;border-radius:8px;font-weight:700;">✓ 완납</span>';
     html += '</div>';
     // 서브텍스트: 총 입고금액 + 날짜 수
     html += '<div style="font-size:11px;color:var(--text3);margin-top:3px;">총 '+allDates.length+'일 거래 · 입고 ₩'+fmt(vd.total)+'</div>';
@@ -2710,7 +2731,7 @@ function renderVendorLedger(searchQ) {
     html += '<div class="vl-body" style="display:'+(isOpen?'block':'none')+';">';
 
     if (!allDates.length) {
-      html += '<div style="padding:20px;text-align:center;color:var(--text3);font-size:12px;">입고 내역이 없습니다</div>';
+      html += '<div style="padding:20px;text-align:center;color:var(--text3);font-size:12px;">'+(dbOnly?'등록된 거래처입니다. 아직 입고 내역이 없습니다.':'입고 내역이 없습니다')+'</div>';
     } else {
       allDates.forEach(function(dt) {
         var dayData  = vd.byDate[dt] || { in:0, items:[] };
