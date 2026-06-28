@@ -5318,10 +5318,21 @@ function ocGenerate() {
           var byCode = products.find(function(p) { return p.code === row.품번 && p.vendor; });
           if (byCode) s = {거래처: byCode.vendor, 거래처상품명: byCode.vname || ''};
         }
+        // 4.5단계: 품번으로 못 찾은 경우 상품코드 탭 상품명으로 재시도
+        if (!s && row.상품명) {
+          var masterList2 = (window._masterProducts && window._masterProducts.length ? window._masterProducts : null)
+                        || (typeof pmData !== 'undefined' && pmData.length ? pmData : null);
+          if (masterList2) {
+            var nameKey45 = row.상품명.toLowerCase().trim();
+            var byName = masterList2.find(function(p) { return p.name && p.name.toLowerCase().trim() === nameKey45 && p.vendor; });
+            if (!byName) byName = masterList2.find(function(p) { return p.name && p.vendor && (p.name.toLowerCase().trim().indexOf(nameKey45) >= 0 || nameKey45.indexOf(p.name.toLowerCase().trim()) >= 0); });
+            if (byName) s = {거래처: byName.vendor, 거래처상품명: byName.vendorName || ''};
+          }
+        }
       }
 
-      // ── 품번으로 못 찾은 경우에만 상품명 유사도 검색 ──
-      if (!s && row.상품명) {
+      // ── 품번 없는 경우에만 상품명 유사도 검색 ──
+      if (!s && !row.품번 && row.상품명) {
         var nameKey = row.상품명.toLowerCase().trim();
         // 5a) ocNameMap 완전 일치
         s = ocNameMap[nameKey] || null;
