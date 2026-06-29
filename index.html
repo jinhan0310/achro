@@ -2383,8 +2383,9 @@ function openKpiModal(type) {
 
   var allVendors = {};
   Object.keys(vMap).forEach(function(v) { allVendors[v] = true; });
-  Object.keys(mMap).forEach(function(v) { allVendors[v] = true; });
   payments.forEach(function(p) { if (p.vendor) allVendors[p.vendor] = true; });
+  // mMap-only 업체(입고 거래·입금 없이 마이너스 기록만 있는 업체)는 제외
+  // → 거래처별 정산 뷰(renderVendorLedger)와 동일한 업체 기준 유지
 
   var vendors = Object.keys(allVendors).sort(function(a, b) { return a.localeCompare(b, 'ko'); });
 
