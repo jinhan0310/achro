@@ -1141,6 +1141,79 @@ var XLSX_SETTLE = (function() {
 })();
 
 
+// ── 거래처 계좌 정보 (내 통장 표시 → 예금주/은행/계좌) ──
+var VENDOR_BANK_MAP = {
+  '이로':          { holder:'지형석',           bank:'기업',      account:'1912546801011' },
+  '핏플립':        { holder:'김승구',           bank:'우리',      account:'1002445832197' },
+  '슬로건':        { holder:'주식회사벨몬드',    bank:'신한',      account:'140014647780'  },
+  '심스':          { holder:'심재현',           bank:'기업',      account:'4608395204019' },
+  '호감':          { holder:'임종찬',           bank:'신한',      account:'110271352266'  },
+  '드로우':        { holder:'두진석',           bank:'국민',      account:'9340104280982' },
+  '플로우':        { holder:'서동민',           bank:'수협',      account:'101019960260'  },
+  '바우':          { holder:'권태근',           bank:'기업',      account:'2111139404014' },
+  '로고':          { holder:'황승진',           bank:'농협',      account:'17075251027390'},
+  '시오':          { holder:'(주)시오코퍼레이션', bank:'신한',     account:'100037871058'  },
+  '로우슬로우':    { holder:'전준기',           bank:'기업',      account:'1031752010'    },
+  '머핀':          { holder:'김성철',           bank:'국민',      account:'5360104084816' },
+  '하이바':        { holder:'김태형',           bank:'하나',      account:'17191028203607'},
+  'ＹＨ１７':      { holder:'김재남',           bank:'기업',      account:'28109020101010'},
+  '루프팩토리':    { holder:'최재성',           bank:'신한',      account:'110310891623'  },
+  '코이츠':        { holder:'김보연',           bank:'우리',      account:'1005604584057' },
+  '고진':          { holder:'박미아',           bank:'국민',      account:'42080101250511'},
+  '아콘':          { holder:'조은영',           bank:'신한',      account:'110494120760'  },
+  '벌스데이':      { holder:'이정혁',           bank:'국민',      account:'53620101505679'},
+  '마스':          { holder:'이준화',           bank:'농협',      account:'3521575554193' },
+  '머프':          { holder:'김석원',           bank:'우리',      account:'1005904730809' },
+  '１８미리':      { holder:'이한빛',           bank:'국민',      account:'4130104251781' },
+  '위어':          { holder:'설휘석',           bank:'국민',      account:'6880104405439' },
+  '하디':          { holder:'조관형',           bank:'신한',      account:'110231247017'  },
+  '너프너프':      { holder:'정지환',           bank:'국민',      account:'58090101286555'},
+  '드랍':          { holder:'(주)경옥',         bank:'국민',      account:'40910101329188'},
+  '엘마로':        { holder:'김찬이',           bank:'국민',      account:'43632501119619'},
+  '세기모자':      { holder:'이상미',           bank:'새마을금고', account:'9003224851611' },
+  '딜리':          { holder:'심기욱',           bank:'국민',      account:'40910101309249'},
+  '오르다':        { holder:'송우석',           bank:'농협',      account:'3010276586521' },
+  '하멜':          { holder:'우환균',           bank:'국민',      account:'9180104175091' },
+  '브론테':        { holder:'김민영',           bank:'국민',      account:'54693701006901'},
+  '자브':          { holder:'주식회사자브',      bank:'하나',      account:'91491002362604'},
+  '일이사':        { holder:'홍상협',           bank:'국민',      account:'5360104057409' },
+  '위유':          { holder:'최훈',             bank:'기업',      account:'212427604013'  },
+  '언본':          { holder:'안상범',           bank:'국민',      account:'570104226077'  },
+  '미도리':        { holder:'최규선',           bank:'국민',      account:'1670104200141' },
+  '혹시':          { holder:'서견우',           bank:'국민',      account:'94435557662'   },
+  '론':            { holder:'오지우',           bank:'신한',      account:'110577798947'  },
+  '로어４８':      { holder:'이돈국',           bank:'국민',      account:'86193704007099'},
+  '그랩':          { holder:'전승범',           bank:'새마을금고', account:'9003236490858' },
+  '프랩':          { holder:'이정재',           bank:'기업',      account:'11223745004012'},
+  '아자뵤':        { holder:'윤성열',           bank:'국민',      account:'23850104332477'},
+  '레거시아카이브': { holder:'김민욱',           bank:'신한',      account:'110526377027'  },
+  '노벨러':        { holder:'이용규',           bank:'하나',      account:'41991062446407'},
+  '맥':            { holder:'정민규',           bank:'신한',      account:'1054947776'    },
+  '브라운':        { holder:'최용호',           bank:'신한',      account:'110542589532'  },
+  '스웨그':        { holder:'남궁연',           bank:'국민',      account:'69470101347078'},
+  '민':            { holder:'김민성',           bank:'하나',      account:'39091031384607'},
+  '히스토리':      { holder:'남희재',           bank:'농협',      account:'3560247592383' },
+  '라이즈':        { holder:'최성훈',           bank:'우리',      account:'1002953372910' },
+  '노마드':        { holder:'주식회사데이프로젝트', bank:'신한',   account:'140014397510'  },
+  '벨로우':        { holder:'김영진',           bank:'국민',      account:'79660104109993'},
+  '웰던':          { holder:'박다빈',           bank:'신한',      account:'110486872930'  },
+  '미즈올':        { holder:'서용대',           bank:'신한',      account:'110500725880'  },
+  '핸드':          { holder:'박성환',           bank:'하나',      account:'20791020650507'},
+  '우기':          { holder:'이동욱',           bank:'국민',      account:'40910101318922'},
+  '엠알':          { holder:'손현제',           bank:'우리',      account:'1005104517809' },
+  '하이리스크':    { holder:'김인섭',           bank:'기업',      account:'5807896804016' },
+  '언':            { holder:'박권일',           bank:'한국씨티',  account:'1631443124301' },
+  '리펜':          { holder:'김태원',           bank:'국민',      account:'4840104181357' },
+  '오퍼':          { holder:'이일원',           bank:'국민',      account:'29450104153432'},
+  '오운':          { holder:'(주)오운컴퍼니',   bank:'국민',      account:'9340104294701' },
+  '언유즈랩':      { holder:'송예지',           bank:'하나',      account:'22191036846707'},
+  '아일스테이지':  { holder:'장규빈',           bank:'우리',      account:'1005604463358' },
+  '올오버':        { holder:'허정훈',           bank:'우리',      account:'1005303042922' },
+  '아론':          { holder:'장윤빈',           bank:'기업',      account:'2909538701017' },
+  '인디고':        { holder:'정진욱',           bank:'국민',      account:'54300101317850'},
+  '아워룸':        { holder:'지승준',           bank:'국민',      account:'570104221171'  }
+};
+
 // ── PRODUCT_DB: 아크로시스템 pmData 브릿지 ──
 // pmData 필드: {code, name, vendor, vendorName, season}
 // → 정산 PRODUCT_DB 필드: {상품코드, 상품명, 거래처, 거래처상품명, 시즌}
@@ -2731,6 +2804,8 @@ function renderVendorLedger(searchQ) {
     html += '<div style="flex:1;min-width:0;">';
     html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">';
     html += '<span class="vendor-name-btn" data-vnd="'+encodeURIComponent(v)+'" style="font-weight:700;font-size:14px;color:var(--accent);text-decoration:underline;text-underline-offset:3px;cursor:pointer;">'+v+'</span>';
+    var _bk = VENDOR_BANK_MAP[v];
+    if (_bk) html += '<span style="font-size:11px;color:var(--text3);font-weight:400;white-space:nowrap;">('+_bk.holder+' '+_bk.bank+' '+_bk.account+')</span>';
     if (isVat) html += '<span style="font-size:10px;padding:2px 7px;background:#e8622a;color:#fff;border-radius:8px;font-weight:700;">부가세포함</span>';
     if (dbOnly) html += '<span style="font-size:10px;padding:2px 8px;background:#b0aba5;color:#fff;border-radius:8px;font-weight:700;">거래없음</span>';
     else if (isComplete) html += '<span style="font-size:10px;padding:2px 8px;background:#2e7d52;color:#fff;border-radius:8px;font-weight:700;">✓ 완납</span>';
