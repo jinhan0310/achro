@@ -3059,6 +3059,23 @@ function renderVendorLedger(searchQ) {
     if (!allDates.length) {
       html += '<div style="padding:20px;text-align:center;color:var(--text3);font-size:12px;">'+(dbOnly?'등록된 거래처입니다. 아직 입고 내역이 없습니다.':'입고 내역이 없습니다')+'</div>';
     } else {
+      // 입금 내역 (최상단 고정)
+      if (pays.length) {
+        html += '<div style="padding:10px 20px;background:#f0f7f2;border-bottom:1px solid #c8e6c9;">';
+        html += '<div style="font-size:11px;color:#2e7d52;font-weight:700;margin-bottom:6px;">입금 내역</div>';
+        pays.forEach(function(p){
+          html += '<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;">'
+            + '<span style="color:var(--text2);">'+p.date+(p.memo?' · '+p.memo:'')+'</span>'
+            + '<span style="font-weight:600;color:#2e7d52;">₩'+fmt(p.amount)+'</span>'
+            + '</div>';
+        });
+        html += '<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-top:6px;padding-top:6px;border-top:1px solid #c8e6c9;">'
+          + '<span>잔 액</span>'
+          + '<span style="color:'+(최종잔<=0?'#2e7d52':'var(--red)')+';">₩'+fmt(최종잔)+'</span>'
+          + '</div>';
+        html += '</div>';
+      }
+
       allDates.forEach(function(dt) {
         var dayData  = vd.byDate[dt] || { in:0, items:[] };
         var minList  = md.byDate[dt] || [];
@@ -3109,23 +3126,6 @@ function renderVendorLedger(searchQ) {
         }
         html += '</div>'; // 날짜 행 end
       });
-
-      // 입금 내역
-      if (pays.length) {
-        html += '<div style="padding:10px 20px;background:#f0f7f2;border-top:1px solid #c8e6c9;">';
-        html += '<div style="font-size:11px;color:#2e7d52;font-weight:700;margin-bottom:6px;">입금 내역</div>';
-        pays.forEach(function(p){
-          html += '<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;">'
-            + '<span style="color:var(--text2);">'+p.date+(p.memo?' · '+p.memo:'')+'</span>'
-            + '<span style="font-weight:600;color:#2e7d52;">₩'+fmt(p.amount)+'</span>'
-            + '</div>';
-        });
-        html += '<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:700;margin-top:6px;padding-top:6px;border-top:1px solid #c8e6c9;">'
-          + '<span>잔 액</span>'
-          + '<span style="color:'+(최종잔<=0?'#2e7d52':'var(--red)')+';">₩'+fmt(최종잔)+'</span>'
-          + '</div>';
-        html += '</div>';
-      }
     }
 
     html += '</div>'; // vl-body end
