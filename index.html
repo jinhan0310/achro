@@ -2659,6 +2659,12 @@ function openKpiModal(type) {
   var allVendors = {};
   Object.keys(vMap).forEach(function(v) { allVendors[v] = true; });
   payments.forEach(function(p) { if (p.vendor) allVendors[p.vendor] = true; });
+
+  var lastPayMap = {};
+  payments.forEach(function(p) {
+    if (!p.vendor) return;
+    if (!lastPayMap[p.vendor] || p.date > lastPayMap[p.vendor]) lastPayMap[p.vendor] = p.date;
+  });
   // mMap-only 업체(입고 거래·입금 없이 마이너스 기록만 있는 업체)는 제외
   // → 거래처별 정산 뷰(renderVendorLedger)와 동일한 업체 기준 유지
 
@@ -2703,10 +2709,15 @@ function openKpiModal(type) {
   rows.forEach(function(r) {
     var color = r.val < 0 ? 'color:#e53e3e;' : '';
     var hasDetails = r.txs.length > 0 || r.minus.length > 0;
+    var daysBadge = '';
+    if ((type === 'today' || type === 'total') && lastPayMap[r.vendor]) {
+      var diffDays = Math.round((Date.parse(today) - Date.parse(lastPayMap[r.vendor])) / 86400000);
+      if (diffDays > 0) daysBadge = ' <span style="color:#e53e3e;font-weight:700;">(+'+diffDays+'일)</span>';
+    }
     html += '<tr class="kpi-vrow" data-kpi-key="'+r.key+'" style="border-bottom:1px solid #f0ece8;background:#fafaf8;cursor:'+(hasDetails?'pointer':'default')+';">'
       + '<td style="padding:10px 16px;color:#1a1814;font-weight:600;">'
       + (hasDetails ? '<span id="kpi-arr-'+r.key+'" style="display:inline-block;font-size:9px;margin-right:4px;transition:transform .15s;">▶</span>' : '<span style="display:inline-block;width:17px;"></span>')
-      + r.vendor + '</td>'
+      + r.vendor + daysBadge + '</td>'
       + '<td style="padding:10px 16px;text-align:right;font-family:\'DM Mono\',monospace;font-weight:500;'+color+'">₩'+fmt(r.val)+'</td>'
       + '<td style="padding:10px 8px;"></td>'
       + '</tr>';
