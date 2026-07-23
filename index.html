@@ -6820,7 +6820,14 @@ function taxExportCSV() {
       .sort(function(a,b){ return a.localeCompare(b,'ko'); })
       .map(function(v) {
         var info = irVendorMap[v] || {total:0, count:0};
-        return { name: v, total: info.total, count: info.count };
+        var byDateMap = {};
+        irDATA.forEach(function(d){
+          if (d.recipient !== v || irDeletedVendors.has(d.recipient)) return;
+          var day = (d.date||'').split(' ')[0];
+          byDateMap[day] = (byDateMap[day]||0) + d.amount;
+        });
+        var byDate = Object.keys(byDateMap).sort().map(function(day){ return { date: day, amount: byDateMap[day] }; });
+        return { name: v, total: info.total, count: info.count, byDate: byDate };
       });
     var selectedTotal = vendorDetails.reduce(function(s,v){ return s+v.total; }, 0);
     var selCount = vendorDetails.reduce(function(s,v){ return s+v.count; }, 0);
@@ -6864,10 +6871,21 @@ function taxExportCSV() {
       var uid = h.id || h.yearMonth + '_' + idx;
       var vendors = h.vendorDetails || (h.checkedVendors||[]).map(function(v){ return {name:v,total:0,count:0}; });
       var detailId = 'irh-detail-'+uid.replace(/[^a-zA-Z0-9]/g,'_');
-      var vendorRows = vendors.map(function(v){
-        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #f0ece8;">'
+      var vendorRows = vendors.map(function(v, vi){
+        var byDate = v.byDate || [];
+        var vDetailId = detailId+'-v'+vi;
+        var dayRows = byDate.map(function(bd){
+          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0 2px 16px;">'
+            + '<span style="font-size:11px;color:var(--text3);">'+bd.date+'</span>'
+            + '<span style="font-size:11px;color:var(--text2);font-family:\'DM Mono\',monospace;">₩'+bd.amount.toLocaleString()+'</span>'
+            + '</div>';
+        }).join('');
+        return '<div style="border-bottom:1px solid #f0ece8;">'
+          + '<div'+(byDate.length?' onclick="var el=document.getElementById(\''+vDetailId+'\');el.style.display=el.style.display===\'none\'?\'\':\'none\';"':'')+' style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;'+(byDate.length?'cursor:pointer;':'')+'">'
           + '<span style="font-size:12px;color:var(--text2);">'+v.name+'</span>'
-          + '<span style="font-size:12px;font-weight:700;color:var(--text);font-family:\'DM Mono\',monospace;">'+(v.total?'₩'+v.total.toLocaleString():'-')+'</span>'
+          + '<span style="font-size:12px;font-weight:700;color:var(--text);font-family:\'DM Mono\',monospace;'+(byDate.length?'text-decoration:underline;text-underline-offset:2px;':'')+'">'+(v.total?'₩'+v.total.toLocaleString():'-')+'</span>'
+          + '</div>'
+          + (byDate.length ? '<div id="'+vDetailId+'" style="display:none;padding:0 0 4px;">'+dayRows+'</div>' : '')
           + '</div>';
       }).join('');
       return '<div style="border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden;">'
