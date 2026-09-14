@@ -139,6 +139,84 @@ async function fbSaveSP() {
   } catch(e) { console.error('FB save SP error', e); }
 }
 
+// ── 대용량 필드 청크 저장 유틸 (Firestore 문서당 1MB 제한 대응) ──
+// 정산 데이터가 커지면 문서 하나(achro/{uid}_data)에 다 넣다가 1MB를 넘겨 저장이 실패했던 문제를 해결하기 위해
+// 각 필드를 achro/{uid}_data/parts/{field}__{i} 서브컬렉션 문서로 쪼개서 저장한다.
+var FB_CHUNK_LIMIT = 800000; // bytes, 1MB 한도 대비 안전 마진
+var FB_FIELD_NAMES = ['txData','priceData','adjData','minusData','payData','vatData','products','history','vendors','ibHistory'];
+
+function _fbByteSize(val) {
+  try { return new Blob([JSON.stringify(val)]).size; } catch(e) { return JSON.stringify(val).length; }
+}
+
+// 배열/객체를 각 청크가 FB_CHUNK_LIMIT 이하가 되도록 분할
+function _fbSplitChunks(value) {
+  var isArr = Array.isArray(value);
+  if (_fbByteSize(value) <= FB_CHUNK_LIMIT) return [value];
+  var keys = isArr ? value.map(function(_, i){ return i; }) : Object.keys(value || {});
+  var chunks = [];
+  var cur = isArr ? [] : {};
+  var curSize = 2;
+  var curLen = 0;
+  for (var i = 0; i < keys.length; i++) {
+    var k = keys[i];
+    var v = isArr ? value[k] : value[k];
+    var itemSize = JSON.stringify(v).length + (isArr ? 1 : (JSON.stringify(k).length + 2));
+    if (curLen > 0 && curSize + itemSize > FB_CHUNK_LIMIT) {
+      chunks.push(cur);
+      cur = isArr ? [] : {};
+      curSize = 2;
+      curLen = 0;
+    }
+    if (isArr) cur.push(v); else cur[k] = v;
+    curSize += itemSize;
+    curLen++;
+  }
+  if (curLen > 0) chunks.push(cur);
+  return chunks.length ? chunks : [isArr ? [] : {}];
+}
+
+function _fbMergeChunks(chunks, isArr) {
+  if (isArr) return chunks.reduce(function(acc, c){ return acc.concat(c); }, []);
+  var out = {};
+  chunks.forEach(function(c){ Object.assign(out, c); });
+  return out;
+}
+
+function _fbPartsRef() {
+  return _db.collection('achro').doc(_fbUser.uid + '_data').collection('parts');
+}
+
+async function _fbSaveField(name, value) {
+  var ref = _fbPartsRef();
+  var metaRef = ref.doc(name + '__meta');
+  var chunks = _fbSplitChunks(value);
+  var isArr = Array.isArray(value);
+  var prevCount = 0;
+  try {
+    var metaSnap = await metaRef.get();
+    if (metaSnap.exists) prevCount = metaSnap.data().chunkCount || 0;
+  } catch(e) {}
+  var batch = _db.batch();
+  batch.set(metaRef, { chunkCount: chunks.length, isArray: isArr, updatedAt: new Date().toISOString() });
+  chunks.forEach(function(c, i) { batch.set(ref.doc(name + '__' + i), { v: c }); });
+  for (var i = chunks.length; i < prevCount; i++) { batch.delete(ref.doc(name + '__' + i)); }
+  await batch.commit();
+}
+
+async function _fbLoadField(name) {
+  var ref = _fbPartsRef();
+  var metaSnap = await ref.doc(name + '__meta').get();
+  if (!metaSnap.exists) return undefined;
+  var meta = metaSnap.data();
+  var count = meta.chunkCount || 0;
+  var isArr = !!meta.isArray;
+  if (count === 0) return isArr ? [] : {};
+  var snaps = await Promise.all(Array.from({length: count}, function(_, i){ return ref.doc(name + '__' + i).get(); }));
+  var chunks = snaps.map(function(s){ return s.exists ? s.data().v : (isArr ? [] : {}); });
+  return _fbMergeChunks(chunks, isArr);
+}
+
 // ── Firestore 불러오기 ──
 async function fbLoadAll() {
   if (!_fbUser) return;
@@ -168,27 +246,41 @@ async function fbLoadAll() {
         if (typeof spRender === 'function') spRender();
       }
     }
-    // 정산 데이터 문서
-    var dataDoc = await _db.collection('achro').doc(_fbUser.uid + '_data').get();
     var st = document.getElementById('fb-sync-status');
-    if (dataDoc.exists) {
-      var dd = dataDoc.data();
-      var _set = function(key, val) {
-        if (val !== undefined && val !== null) {
-          if (key === SK) _txCache = val; // 캐시 즉시 반영
-          _idleWrite(function() { localStorage.setItem(key, JSON.stringify(val)); });
-        }
-      };
-      // achro_tx4는 로컬이 더 최신이면 Firebase가 덮어쓰지 않음 (새로고침 시 데이터 유실 방지)
+    var FIELD_MAP = {
+      txData: 'achro_tx4', priceData: 'achro_price4', adjData: 'achro_adj2',
+      minusData: 'achro_minus_v1', payData: 'achro_payment_v1', vatData: 'achro_vat_vendors',
+      products: 'achro_products', history: 'achro_history', vendors: 'achro_vendors', ibHistory: 'achro_ib_history'
+    };
+    var _set = function(key, val) {
+      if (val !== undefined && val !== null) {
+        if (key === SK) _txCache = val; // 캐시 즉시 반영
+        _idleWrite(function() { localStorage.setItem(key, JSON.stringify(val)); });
+      }
+    };
+    var dataDoc = await _db.collection('achro').doc(_fbUser.uid + '_data').get();
+    var dd = dataDoc.exists ? dataDoc.data() : {};
+    var partsSnap = await _fbPartsRef().get();
+
+    if (!partsSnap.empty) {
+      // 신규 청크 구조
       var fbTxTime  = dd.txUpdatedAt || dd.uploadedAt || null;
       var localTime = localStorage.getItem(SK + '_saved_at');
       var skipTx = fbTxTime && localTime && localTime > fbTxTime;
-      if (!skipTx) {
-        _set('achro_tx4', dd.txData);
-      } else {
-        // 로컬이 더 최신 → Firebase에 즉시 업로드해서 동기화
-        if (typeof fbSaveTx === 'function') fbSaveTx(loadTx());
+      for (var i = 0; i < FB_FIELD_NAMES.length; i++) {
+        var field = FB_FIELD_NAMES[i];
+        if (field === 'txData' && skipTx) continue;
+        var v = await _fbLoadField(field);
+        _set(FIELD_MAP[field], v);
       }
+      if (skipTx && typeof fbSaveTx === 'function') fbSaveTx(loadTx());
+      if (st) { st.textContent = '✓ 동기화 완료'; setTimeout(function(){ st.textContent=''; }, 3000); }
+    } else if (dataDoc.exists && (dd.txData !== undefined || dd.history !== undefined)) {
+      // 구버전 단일 문서 구조 → localStorage 반영 후 신규 청크 구조로 마이그레이션
+      var fbTxTime2  = dd.txUpdatedAt || dd.uploadedAt || null;
+      var localTime2 = localStorage.getItem(SK + '_saved_at');
+      var skipTx2 = fbTxTime2 && localTime2 && localTime2 > fbTxTime2;
+      if (!skipTx2) _set('achro_tx4', dd.txData);
       _set('achro_price4',     dd.priceData);
       _set('achro_adj2',       dd.adjData);
       _set('achro_minus_v1',   dd.minusData);
@@ -198,6 +290,24 @@ async function fbLoadAll() {
       _set('achro_history',    dd.history);
       _set('achro_vendors',    dd.vendors);
       _set('achro_ib_history', dd.ibHistory);
+      if (st) st.textContent = '데이터 구조 업그레이드 중...';
+      var migrate = {
+        txData:    skipTx2 ? loadTx() : (dd.txData || []),
+        priceData: dd.priceData || {},
+        adjData:   dd.adjData || [],
+        minusData: dd.minusData || [],
+        payData:   dd.payData || [],
+        vatData:   dd.vatData || [],
+        products:  dd.products || [],
+        history:   dd.history || [],
+        vendors:   dd.vendors || [],
+        ibHistory: dd.ibHistory || []
+      };
+      for (var mf in migrate) { await _fbSaveField(mf, migrate[mf]); }
+      // 구 문서의 대용량 필드는 삭제해서 다시 1MB를 넘지 않도록 정리
+      var clearOld = { migratedAt: new Date().toISOString() };
+      FB_FIELD_NAMES.forEach(function(f){ clearOld[f] = firebase.firestore.FieldValue.delete(); });
+      await _db.collection('achro').doc(_fbUser.uid + '_data').set(clearOld, { merge: true });
       if (st) { st.textContent = '✓ 동기화 완료'; setTimeout(function(){ st.textContent=''; }, 3000); }
     } else {
       // Firebase에 데이터 없음 → 이 기기의 데이터가 있으면 자동 업로드
@@ -219,7 +329,7 @@ async function fbUploadAll() {
   if (st) st.textContent = '업로드 중...';
   try {
     var getLS = function(k, def) { try { return JSON.parse(localStorage.getItem(k) || JSON.stringify(def)); } catch(e) { return def; } };
-    await _db.collection('achro').doc(_fbUser.uid + '_data').set({
+    var fields = {
       txData:    getLS('achro_tx4', []),
       priceData: getLS('achro_price4', {}),
       adjData:   getLS('achro_adj2', []),
@@ -229,9 +339,10 @@ async function fbUploadAll() {
       products:  getLS('achro_products', []),
       history:   getLS('achro_history', []),
       vendors:   getLS('achro_vendors', []),
-      ibHistory: getLS('achro_ib_history', []),
-      uploadedAt: new Date().toISOString()
-    });
+      ibHistory: getLS('achro_ib_history', [])
+    };
+    for (var name in fields) { await _fbSaveField(name, fields[name]); }
+    await _db.collection('achro').doc(_fbUser.uid + '_data').set({ uploadedAt: new Date().toISOString() }, { merge: true });
     // pmData / spData
     if (typeof pmData !== 'undefined' && pmData && pmData.length) {
       await _db.collection('achro').doc(_fbUser.uid).set({ pmData: pmData }, { merge: true });
@@ -246,7 +357,7 @@ async function fbUploadAll() {
     var msg = e.message || String(e);
     var hint = '';
     if (msg.toLowerCase().includes('permission') || msg.includes('insufficient')) {
-      hint = '\n\n【원인】 Firestore 보안 규칙 문제\n【해결】 Firebase 콘솔 → Firestore → 규칙 탭에서\n아래 규칙으로 교체하세요:\n\nrules_version = \'2\';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /achro/{docId} {\n      allow read, write: if request.auth != null;\n    }\n  }\n}';
+      hint = '\n\n【원인】 Firestore 보안 규칙 문제\n【해결】 Firebase 콘솔 → Firestore → 규칙 탭에서\n아래 규칙으로 교체하세요:\n\nrules_version = \'2\';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /achro/{docId} {\n      allow read, write: if request.auth != null;\n    }\n    match /achro/{docId}/parts/{partId} {\n      allow read, write: if request.auth != null;\n    }\n  }\n}';
     }
     alert('업로드 실패: ' + msg + hint);
   }
@@ -254,8 +365,10 @@ async function fbUploadAll() {
 
 // ── 정산 데이터 저장 (debounce 500ms) ──
 // patch를 누적해서 한 번에 저장 — 타이머 재설정 시 이전 patch가 사라지는 버그 방지
+// 대용량 필드(txData, history 등)는 청크 서브컬렉션에, 작은 타임스탬프 메타는 상위 문서에 저장
 var _fbSaveTimer = null;
 var _fbSavePatch = {};
+var _FB_META_KEYS = { txUpdatedAt: true };
 function fbSaveData(patch) {
   if (!_fbUser) return;
   Object.assign(_fbSavePatch, patch);
@@ -263,8 +376,18 @@ function fbSaveData(patch) {
   _fbSaveTimer = setTimeout(async function() {
     var toSave = _fbSavePatch;
     _fbSavePatch = {};
-    try { await _db.collection('achro').doc(_fbUser.uid + '_data').set(toSave, {merge:true}); }
-    catch(e) { console.error('FB save error', e); }
+    try {
+      var meta = {};
+      var fieldPromises = [];
+      for (var key in toSave) {
+        if (_FB_META_KEYS[key]) { meta[key] = toSave[key]; continue; }
+        fieldPromises.push(_fbSaveField(key, toSave[key]));
+      }
+      if (Object.keys(meta).length) {
+        await _db.collection('achro').doc(_fbUser.uid + '_data').set(meta, { merge: true });
+      }
+      await Promise.all(fieldPromises);
+    } catch(e) { console.error('FB save error', e); }
   }, 500);
 }
 function fbSaveTx(d)       { fbSaveData({txData: d, txUpdatedAt: new Date().toISOString()}); }
