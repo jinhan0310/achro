@@ -132,13 +132,6 @@ async function fbSavePM() {
   } catch(e) { console.error('FB save PM error', e); }
 }
 
-async function fbSaveSP() {
-  if (!_fbUser) return;
-  try {
-    await _db.collection('achro').doc(_fbUser.uid).set({ spData: spData, spUpdated: new Date().toISOString() }, { merge: true });
-  } catch(e) { console.error('FB save SP error', e); }
-}
-
 // ── 대용량 필드 청크 저장 유틸 (Firestore 문서당 1MB 제한 대응) ──
 // 정산 데이터가 커지면 문서 하나(achro/{uid}_data)에 다 넣다가 1MB를 넘겨 저장이 실패했던 문제를 해결하기 위해
 // 각 필드를 achro/{uid}_data/parts/{field}__{i} 서브컬렉션 문서로 쪼개서 저장한다.
@@ -240,11 +233,7 @@ async function fbLoadAll() {
         if (typeof pmRenderSeasonTabs === 'function') pmRenderSeasonTabs();
         if (typeof pmRefreshAll === 'function') { pmRefreshAll(); _pmDirty = false; }
       }
-      if (d.spData && d.spData.length) {
-        spData = d.spData;
-        _idleWrite(function() { localStorage.setItem(SP_KEY, JSON.stringify(spData)); });
-        if (typeof spRender === 'function') spRender();
-      }
+      if (typeof spOnCloudLoaded === 'function') spOnCloudLoaded(d.spData, d.spDeleted);
     }
     var st = document.getElementById('fb-sync-status');
     var FIELD_MAP = {
@@ -347,9 +336,7 @@ async function fbUploadAll() {
     if (typeof pmData !== 'undefined' && pmData && pmData.length) {
       await _db.collection('achro').doc(_fbUser.uid).set({ pmData: pmData }, { merge: true });
     }
-    if (typeof spData !== 'undefined' && spData && spData.length) {
-      await _db.collection('achro').doc(_fbUser.uid).set({ spData: spData }, { merge: true });
-    }
+    if (typeof spCloudSync === 'function') await spCloudSync();
     if (st) { st.textContent = '✓ 업로드 완료'; setTimeout(function(){ st.textContent=''; }, 3000); }
     alert('클라우드 업로드 완료!\n다른 기기에서 로그인하면 동기화된 데이터를 볼 수 있습니다.');
   } catch(e) {
@@ -7651,25 +7638,8 @@ const SP_INITIAL = [{"id": 1, "brand": "누죤 5-112 18mm", "product": "더럼�
 
 function spLoad() {
   try { var s = localStorage.getItem(SP_KEY); if(s) return JSON.parse(s); } catch(e){}
+  window._spFresh = true; // 이 브라우저에 저장된 적 없음 → 클라우드 데이터를 그대로 받는다
   return SP_INITIAL.map(d=>({...d}));
-}
-function spSave() {
-  localStorage.setItem(SP_KEY, JSON.stringify(spData));
-  // 저장 날짜 표시 (년월일 시분초)
-  var el = document.getElementById('sp-save-status');
-  if (el) {
-    var now = new Date();
-    var y = now.getFullYear();
-    var mo = String(now.getMonth()+1).padStart(2,'0');
-    var d = String(now.getDate()).padStart(2,'0');
-    var h = String(now.getHours()).padStart(2,'0');
-    var mi = String(now.getMinutes()).padStart(2,'0');
-    var s = String(now.getSeconds()).padStart(2,'0');
-    el.textContent = '☁ ' + y + '.' + mo + '.' + d + ' ' + h + ':' + mi + ':' + s + ' 저장됨';
-    el.style.color = 'var(--green)';
-    setTimeout(function(){ if(el) el.style.color = 'var(--text3)'; }, 4000);
-  }
-  if (typeof fbSaveSP === 'function') fbSaveSP();
 }
 window.spSaveManual = function() {
   spSave();
@@ -7681,6 +7651,171 @@ window.spSaveManual = function() {
 };
 
 let spData = spLoad();
+// ══ 샘플반납 저장/동기화 (항목 단위 병합 — 오래된 탭·기기가 최근 변경을 덮어쓰지 못하게 함) ══
+// 각 항목에 수정시각(_u)을 기록하고, 저장·불러오기 때마다 id 기준으로 더 최신 항목을 채택한다.
+// 삭제는 SP_DEL_KEY 에 삭제기록(tombstone)으로 남겨 다른 탭/기기에서 되살아나지 않게 한다.
+var SP_DEL_KEY = 'sample_mgmt_v3_del';
+function spIdent(d) { return [d.brand, d.product, d.color, d.size].join('|'); }
+function spReadTomb() { try { return JSON.parse(localStorage.getItem(SP_DEL_KEY) || '{}') || {}; } catch(e) { return {}; } }
+function spStrip(d) { var c = Object.assign({}, d); delete c._u; return JSON.stringify(c); }
+var _spSnap = null;
+function spMakeSnap() { _spSnap = {}; spData.forEach(function(d) { _spSnap[d.id] = spStrip(d); }); }
+
+// 두 목록(+삭제기록)을 합친다. 항목을 버리는 경우는 '더 최신인 삭제기록이 있을 때'뿐.
+function spMergeAll(aItems, aTomb, bItems, bTomb) {
+  var tomb = Object.assign({}, bTomb || {});
+  Object.keys(aTomb || {}).forEach(function(k) { if (!tomb[k] || aTomb[k] > tomb[k]) tomb[k] = aTomb[k]; });
+  var A = {}, B = {}, ids = [], seen = {};
+  (aItems || []).forEach(function(d) { A[d.id] = d; if (!seen[d.id]) { seen[d.id] = 1; ids.push(d.id); } });
+  (bItems || []).forEach(function(d) { B[d.id] = d; if (!seen[d.id]) { seen[d.id] = 1; ids.push(d.id); } });
+  var maxId = ids.reduce(function(m, i) { return Math.max(m, Number(i) || 0); }, 0);
+  var out = [];
+  ids.forEach(function(id) {
+    var a = A[id], b = B[id], pick, other = null;
+    if (a && b) {
+      if (spIdent(a) !== spIdent(b)) {            // 같은 id에 서로 다른 샘플 → 둘 다 보존
+        pick = a; maxId++; out.push(Object.assign({}, b, {id: maxId}));
+      } else {
+        var ua = a._u || '', ub = b._u || '';
+        if (ua > ub) { pick = a; other = b; }
+        else if (ub > ua) { pick = b; other = a; }
+        else {                                      // 시각 정보 없음(기존 데이터) → 반납 체크가 있는 쪽 우선
+          pick = (b.returnDate && !a.returnDate) ? b : a; other = pick === a ? b : a;
+        }
+      }
+    } else { pick = a || b; }
+    if (tomb[id] && tomb[id] > (pick._u || '')) return;  // 더 최신 삭제기록 → 삭제 유지
+    if (other) {
+      pick = Object.assign({}, pick);
+      ['memo', 'inboundDate', 'saemkyulDate'].forEach(function(f) { if (!pick[f] && other[f]) pick[f] = other[f]; });
+    }
+    out.push(pick);
+  });
+  out.sort(function(x, y) { return (Number(x.id) || 0) - (Number(y.id) || 0); });
+  return {items: out, tomb: tomb};
+}
+
+function spSetStatus(txt, color) {
+  var el = document.getElementById('sp-save-status');
+  if (!el) return;
+  el.textContent = txt; el.style.color = color || 'var(--text3)';
+}
+function spStamp() {
+  var d = new Date(), p = function(n) { return String(n).padStart(2, '0'); };
+  return d.getFullYear() + '.' + p(d.getMonth() + 1) + '.' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+}
+function spRefreshUI() {
+  try { spUpdateStats(); spUpdateBadges(); spRenderTable(); spUpdateTodayCount(); } catch(e) {}
+}
+function spApplyMerged(r, persist) {
+  var changed = JSON.stringify(r.items) !== JSON.stringify(spData);
+  if (changed) spData = r.items;
+  try {
+    if (persist) {
+      localStorage.setItem(SP_KEY, JSON.stringify(spData));
+      localStorage.setItem(SP_DEL_KEY, JSON.stringify(r.tomb));
+    }
+  } catch(e) {}
+  spMakeSnap();
+  if (changed) spRefreshUI();
+  return changed;
+}
+
+function spSave() {
+  var now = new Date().toISOString(), tomb = spReadTomb();
+  if (_spSnap) {
+    Object.keys(_spSnap).forEach(function(id) {          // 삭제 감지
+      if (!spData.some(function(d) { return String(d.id) === id; })) tomb[id] = now;
+    });
+    spData.forEach(function(d) { if (_spSnap[d.id] !== spStrip(d)) d._u = now; });  // 변경 항목 시각 기록
+  }
+  // 다른 탭이 먼저 저장한 내용과 합친 뒤 저장 (오래된 탭이 덮어쓰지 않도록)
+  try {
+    var stored = JSON.parse(localStorage.getItem(SP_KEY) || 'null');
+    if (Array.isArray(stored)) {
+      var r = spMergeAll(spData, tomb, stored, tomb);
+      if (JSON.stringify(r.items) !== JSON.stringify(spData)) { spData = r.items; setTimeout(spRefreshUI, 0); }
+      tomb = r.tomb;
+    }
+  } catch(e) {}
+  try {
+    localStorage.setItem(SP_DEL_KEY, JSON.stringify(tomb));
+    localStorage.setItem(SP_KEY, JSON.stringify(spData));
+  } catch(e) {
+    spSetStatus('⚠ 브라우저 저장 실패: ' + (e.message || e), 'var(--red)');
+    return;
+  }
+  spMakeSnap();
+  if (typeof _fbUser !== 'undefined' && _fbUser) { spSetStatus('☁ 저장 중…'); fbSaveSP(); }
+  else spSetStatus('💾 ' + spStamp() + ' 이 기기에만 저장됨 (로그인 시 클라우드 동기화)', 'var(--orange)');
+}
+
+// ── 클라우드 동기화: 서버 내용을 읽어 합친 뒤 저장(트랜잭션) — 덮어쓰기 없음 ──
+var _spSyncing = false, _spSyncAgain = false, _spRetryTimer = null;
+async function spCloudSync() {
+  if (typeof _fbUser === 'undefined' || !_fbUser) return;
+  if (_spSyncing) { _spSyncAgain = true; return; }
+  _spSyncing = true;
+  try {
+    var ref = _db.collection('achro').doc(_fbUser.uid), merged = null;
+    await _db.runTransaction(async function(t) {
+      var snap = await t.get(ref), d = snap.exists ? snap.data() : {};
+      merged = spMergeAll(spData, spReadTomb(), d.spData || [], d.spDeleted || {});
+      t.set(ref, {spData: merged.items, spDeleted: merged.tomb, spUpdated: new Date().toISOString()}, {merge: true});
+    });
+    if (merged) spApplyMerged(merged, true);
+    clearTimeout(_spRetryTimer);
+    spSetStatus('☁ ' + spStamp() + ' 클라우드 저장됨', 'var(--green)');
+    setTimeout(function() { spSetStatus('☁ ' + spStamp() + ' 클라우드 저장됨'); }, 4000);
+  } catch(e) {
+    console.error('SP cloud sync error', e);
+    spSetStatus('⚠ 클라우드 저장 실패 — 이 기기에는 저장됨, 자동 재시도 중 (' + (e.code || e.message || '') + ')', 'var(--red)');
+    clearTimeout(_spRetryTimer);
+    _spRetryTimer = setTimeout(spCloudSync, 20000);
+  } finally {
+    _spSyncing = false;
+    if (_spSyncAgain) { _spSyncAgain = false; spCloudSync(); }
+  }
+}
+
+// ── 로그인/새로고침 시 클라우드 불러오기: 덮어쓰지 않고 합침 + 하루 1회 백업 ──
+async function spBackupDaily(cloudItems, cloudTomb, localItems) {
+  try {
+    var d = new Date(), p = function(n) { return String(n).padStart(2, '0'); };
+    var ymd = function(x) { return x.getFullYear() + p(x.getMonth() + 1) + p(x.getDate()); };
+    var col = _db.collection('achro'), base = _fbUser.uid + '_spbak_';
+    var ref = col.doc(base + ymd(d)), snap = await ref.get();
+    if (!snap.exists) {
+      await ref.set({at: d.toISOString(), cloud: cloudItems || [], cloudDeleted: cloudTomb || {}, local: localItems || []});
+    }
+    var old = new Date(d.getTime() - 15 * 86400000);
+    await col.doc(base + ymd(old)).delete();             // 15일 지난 백업 정리
+  } catch(e) { console.warn('SP backup skipped', e); }
+}
+function spOnCloudLoaded(cloudItems, cloudTomb) {
+  if (!Array.isArray(cloudItems)) { spCloudSync(); return; }
+  var localCopy = JSON.parse(JSON.stringify(spData));
+  spBackupDaily(JSON.parse(JSON.stringify(cloudItems)), cloudTomb || {}, localCopy);
+  var r = (window._spFresh && cloudItems.length)
+    ? {items: cloudItems, tomb: cloudTomb || {}}
+    : spMergeAll(spData, spReadTomb(), cloudItems, cloudTomb || {});
+  window._spFresh = false;
+  var changed = spApplyMerged(r, true);
+  if (changed) { try { localStorage.setItem('sample_mgmt_v3_prebak', JSON.stringify({at: new Date().toISOString(), local: localCopy})); } catch(e) {} }
+  if (JSON.stringify(r.items) !== JSON.stringify(cloudItems)) spCloudSync();   // 내 쪽이 더 최신이면 클라우드에 반영
+}
+function fbSaveSP() { clearTimeout(window._spSyncTimer); window._spSyncTimer = setTimeout(spCloudSync, 400); }
+
+// 다른 탭에서 저장하면 이 탭도 합쳐서 화면 갱신
+window.addEventListener('storage', function(e) {
+  if (e.key !== SP_KEY) return;
+  try {
+    var stored = JSON.parse(e.newValue || 'null');
+    if (Array.isArray(stored)) spApplyMerged(spMergeAll(spData, spReadTomb(), stored, spReadTomb()), true);
+  } catch(err) {}
+});
+window.addEventListener('online', function() { if (typeof _fbUser !== 'undefined' && _fbUser) spCloudSync(); });
+spMakeSnap();
 let spCat = '전체';
 let spFilter = 'all';
 let spSearch = '';
