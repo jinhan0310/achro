@@ -5689,7 +5689,9 @@ function ocParseOrder(wb, fname) {
     var qty = Number(ocColVal(r, ['구매수량','수량','주문수량','구매 수량'])) || 1;
     var receiver = String(ocColVal(r, ['수령자명','수취인명','받는사람','수령인명','받는분']) || '');
     var orderDate = ocColVal(r, ['주문일','결제일','주문일시','결제일시','주문 일자']) || '';
+    var adminMemo = String(ocColVal(r, ['관리자메모','관리자 메모','판매자메모','판매자 메모','메모']) || '').trim();
     var base = {
+      관리자메모: adminMemo,
       주문번호: orderNo, 상품명: raw.replace(/\[.*?\]/, '').trim(),
       품번: ocNormCode(code), 컬러: ocGetColor(optStr), 사이즈: ocGetSize(optStr),
       수량: qty, 수령자: receiver,
@@ -5795,9 +5797,19 @@ function ocParseSupplier(wb, fname) {
   ocCheckReady();
 }
 
+var ocPrepared = [];
 function ocGenerate() {
   // 품번 정규화 (T0→TO, B0→BO) — 파싱 시점에 못 된 경우 대비
   ocOrders.forEach(function(o) { if (o.품번) o.품번 = ocNormCode(o.품번); });
+  // 관리자 메모에 '챙겨놈'이 있는 주문 → 이미 확보해 둔 상품으로 하단에 따로 표기 (발주 수량은 그대로 둠)
+  var _pg = {};
+  ocOrders.forEach(function(o) {
+    if (!/챙겨\s*놈|챙김/.test(o.관리자메모 || '')) return;
+    var gk = (o.주문번호 || o.수령자 || '') + '||' + o.관리자메모;
+    if (!_pg[gk]) _pg[gk] = {주문번호:o.주문번호, 수령자:o.수령자, 메모:o.관리자메모, items:[]};
+    _pg[gk].items.push({상품명:o.상품명, 품번:o.품번, 컬러:o.컬러, 사이즈:o.사이즈, 수량:o.수량, kodi:!!o.isKodiOpt});
+  });
+  ocPrepared = Object.values(_pg);
   var sm = {};
   ocOrders.forEach(function(o) {
     var k = o.isKodiOpt ? 'KODI||'+o.상품명+'||'+o.kodiOptStr : o.상품명+'|'+o.품번+'|'+o.컬러+'|'+o.사이즈;
@@ -6082,6 +6094,22 @@ function ocRender() {
     html += '</div>';
   }
 
+  // ── 챙겨놈 (관리자 메모) ──
+  if (ocPrepared.length) {
+    html += '<div style="margin-top:8px;border-radius:12px;overflow:hidden;border:1px solid rgba(46,125,82,.35)">'
+      + '<div style="display:flex;align-items:center;gap:10px;padding:10px 18px;background:rgba(46,125,82,.08)">'
+      + '<span style="font-size:14px;font-weight:700;color:var(--green)">📦 챙겨놓은 상품 (관리자 메모 "챙겨놈")</span>'
+      + '<span style="font-size:12px;color:var(--text2);margin-left:auto">'+ocPrepared.length+'건 · 위 발주 수량에는 포함되어 있음</span></div>';
+    ocPrepared.forEach(function(g) {
+      html += '<div style="padding:10px 18px;border-top:1px solid var(--border)">'
+        + '<div style="font-size:13px;font-weight:700">'+(g.수령자||'-')+' <span style="font-size:11px;color:var(--text3);font-weight:400">'+(g.주문번호||'')+'</span></div>'
+        + '<div style="font-size:12px;color:var(--green);margin:2px 0 4px">메모: '+g.메모+'</div>'
+        + g.items.map(function(it){ return '<div style="font-size:12px;color:var(--text2)">· '+it.상품명+(it.품번?' ['+it.품번+']':'')+' / '+it.컬러+' / '+it.사이즈+' / '+it.수량+'개'+(it.kodi?' (코디)':'')+'</div>'; }).join('')
+        + '</div>';
+    });
+    html += '</div>';
+  }
+
   box.innerHTML = html;
   window._ocEntryKeys = window._ocEntryKeys;
 }
@@ -6214,6 +6242,7 @@ function ocDlExcel() {
       });
       if(unmapped.length){aoa.push(['','','','','','','','']);aoa.push(['[ 거래처 미확인 ]','','','','','','','']);aoa.push(H1.slice());unmapped.forEach(function(r){aoa.push(['⚠ 미확인',r.상품명,r.품번||'품번없음','-',r.컬러,r.사이즈,r.수량,'거래처 확인 필요']);});}
       if(kodiRows.length){aoa.push(['','','','','','','','']);aoa.push(['[ 미매핑 - 함께 코디된 상품 (미등록, 품번 없음) ]','','','','','','','']);aoa.push(['메인 상품명','품번','함께 코디된 옵션 내용','컬러','사이즈','수량','','']);kodiRows.forEach(function(r){aoa.push(r.concat(['','']));});}
+      if(ocPrepared.length){aoa.push(['','','','','','','','']);aoa.push(['[ 챙겨놓은 상품 - 관리자 메모 챙겨놈 ]','','','','','','','']);aoa.push(['수령자','주문번호','관리자 메모','상품명','컬러','사이즈','수량','']);ocPrepared.forEach(function(g){g.items.forEach(function(it,i){aoa.push([i?'':g.수령자,i?'':g.주문번호,i?'':g.메모,it.상품명,it.컬러,it.사이즈,it.수량,'']);});});}
       var ws1=XS.utils.aoa_to_sheet(aoa); ws1['!cols']=colWidths(H1,pureData); applyStyles(ws1,[1,3]); XS.utils.book_append_sheet(wb,ws1,'전체 발주 통합');
       sups.forEach(function(sup){
         var H2=['ACHRO 상품명','품번','거래처 상품명','컬러','사이즈','수량'];
