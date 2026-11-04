@@ -5594,7 +5594,8 @@ function ocParseOptions(optStr) {
     if (nm.indexOf('코디') >= 0) {
       out.kodi.push(seg);
     } else if (nm.indexOf('1+1') >= 0 || (nm.indexOf('추가') >= 0 && /컬러|색상|color/.test(nm))) {
-      if (val) out.extraColors.push(normalizeColor(val));
+      var ev = val.replace(/\s*\([^)]*\)\s*/g, ' ').trim() || val; // 컬러 옆 괄호 메모는 무시
+      if (val) out.extraColors.push(normalizeColor(ev));
     } else if (/(color|컬러|색상)$/.test(nm)) {
       if (!out.hasColor && val) { out.hasColor = true; out.color = normalizeColor(val.replace(/\s*\([^)]*\)\s*/g, ' ').trim() || val); }
     } else if (/size|사이즈/.test(nm)) {
