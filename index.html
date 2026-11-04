@@ -5713,6 +5713,12 @@ function ocParseOrder(wb, fname) {
     var same = function(m) { return !m._extra && !m.isKodiOpt && m.품번 === o.품번 && m.상품명 === o.상품명; };
     var main = ocOrders.find(function(m) { return same(m) && o.주문번호 && m.주문번호 === o.주문번호; })
             || ocOrders.find(function(m) { return same(m) && o.수령자 && m.수령자 === o.수령자; });
+    if (!main) {
+      // 주문번호/수령자 열이 없는 파일: 줄 순서로 판단 — 1+1 줄 바로 뒤(없으면 바로 앞)의 같은 상품 메인 줄
+      var idx = ocOrders.indexOf(o), k;
+      for (k = idx + 1; k < ocOrders.length && !main; k++) if (same(ocOrders[k])) main = ocOrders[k];
+      for (k = idx - 1; k >= 0 && !main; k--) if (same(ocOrders[k])) main = ocOrders[k];
+    }
     o.사이즈 = main ? main.사이즈 : '사이즈확인';
   });
   var d = ocOrders.find(function(o) { return o.주문일; });
