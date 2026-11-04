@@ -5578,7 +5578,14 @@ function normalizeColor(s) {
 // 옵션 문자열 분해: "color: gray|(1+1)추가컬러 선택: black", "브라운과 코디된 OO후드(gray): gray" 등
 function ocParseOptions(optStr) {
   var out = {hasColor:false, color:'', hasSize:false, size:'', extraColors:[], kodi:[]};
-  String(optStr || '').split(/[|\n\/]/).forEach(function(seg) {
+  // 괄호 안의 '/'(예: Blue(라지 10/28 입고))는 구분자로 보지 않는다
+  var segs = [], buf = '', depth = 0;
+  String(optStr || '').split('').forEach(function(ch) {
+    if (ch === '(') depth++; else if (ch === ')') depth = Math.max(0, depth - 1);
+    if (depth === 0 && (ch === '|' || ch === '/' || ch === '\n')) { segs.push(buf); buf = ''; } else buf += ch;
+  });
+  segs.push(buf);
+  segs.forEach(function(seg) {
     seg = seg.trim(); if (!seg) return;
     var i = seg.indexOf(':');
     var name = i >= 0 ? seg.slice(0, i).trim() : '';
@@ -5589,7 +5596,7 @@ function ocParseOptions(optStr) {
     } else if (nm.indexOf('1+1') >= 0 || (nm.indexOf('추가') >= 0 && /컬러|색상|color/.test(nm))) {
       if (val) out.extraColors.push(normalizeColor(val));
     } else if (/(color|컬러|색상)$/.test(nm)) {
-      if (!out.hasColor && val) { out.hasColor = true; out.color = normalizeColor(val); }
+      if (!out.hasColor && val) { out.hasColor = true; out.color = normalizeColor(val.replace(/\s*\([^)]*\)\s*/g, ' ').trim() || val); }
     } else if (/size|사이즈/.test(nm)) {
       if (!out.hasSize && val) { out.hasSize = true; out.size = val; }
     }
@@ -5691,6 +5698,8 @@ function ocParseOrder(wb, fname) {
     };
     // 옵션 분해: 추가컬러(1+1) 분리, '코디'가 들어간 옵션은 미매핑(미등록 코디 상품)으로 분류
     var po = ocParseOptions(optStr);
+    if (po.hasColor) base.컬러 = po.color;
+    if (po.hasSize) base.사이즈 = po.size;
     if (!po.kodi.length && !po.extraColors.length) { ocOrders.push(base); return; }
     var hasMainOpt = po.hasColor || po.hasSize || (!po.kodi.length && !po.extraColors.length);
     if (hasMainOpt) {
