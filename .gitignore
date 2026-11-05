@@ -15,3 +15,5 @@ index_backup_*.html
 .mcp.json
 .claude/
 .oms_profile/
+customers_data.json
+customers.html
