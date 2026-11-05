@@ -14,3 +14,4 @@ jarvis/__pycache__/
 index_backup_*.html
 .mcp.json
 .claude/
+.oms_profile/
