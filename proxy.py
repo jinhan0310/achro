@@ -91,7 +91,7 @@ def _oms_scan_pages(max_pages=10):
             body = _oms_get('/order', {'page': page, 'sort': 'wtime', 'pageSize': 100})
         except urllib.error.HTTPError as e:
             if e.code in (401, 403):
-                return None, 'OMS 토큰 만료 — fetch_orders_oms.py를 실행해 토큰을 갱신하세요.'
+                return None, 'OMS 토큰 만료 — OMS토큰갱신.bat 을 실행해 토큰을 갱신하세요.'
             return None, f'OMS API 오류 (HTTP {e.code}): {e.reason}'
         except RuntimeError as e:
             return None, str(e)
