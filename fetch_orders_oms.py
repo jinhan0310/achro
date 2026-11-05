@@ -25,8 +25,7 @@ except ImportError:
 
 load_dotenv()
 
-IMWEB_EMAIL    = os.getenv("IMWEB_EMAIL", "bboyjinhan@naver.com")
-IMWEB_PASSWORD = os.getenv("IMWEB_PASSWORD", "wlsgks4633")
+# 로그인은 보이는 브라우저 창에서 사용자가 직접 한다 (비밀번호를 코드/.env 로 자동 입력하지 않음)
 _TOKEN_CACHE   = Path(__file__).parent / ".oms_token.json"
 
 
@@ -52,7 +51,7 @@ def _save_token(token: str):
     except Exception:
         pass
 OMS_API_BASE   = "https://api.oms.imweb.me/admin/v1"
-OMS_ORDER_URL  = "https://achro.imweb.me/admin/shopping/order-v1"
+OMS_ORDER_URL  = "https://achro.imweb.me/admin/shopping/order-v1?subPath=L29yZGVycy90YWIvdDIwMjQwNzA0NTQ0NGRkZTlhNWVkMS8x"
 
 # 탭 코드 (아임웹 OMS 관리자 탭)
 TAB_ALL             = "t2024070464f0691fbfdc9"
@@ -63,52 +62,74 @@ TAB_SHIPPING        = "t20240704d30a853b0c218"    # 배송중 (OSS03)
 TAB_DONE            = "t202407043d72764704e3a"    # 배송완료 (OSS04)
 
 
+OMS_PROFILE    = Path(__file__).parent / ".oms_profile"   # 로그인 세션 보관 폴더 (git 제외, 쿠키 포함)
+
+
+def _capture_oms_token(headless: bool, manual_login: bool):
+    """저장된 로그인 세션으로 OMS 페이지를 열어 Bearer 토큰을 잡는다.
+    manual_login=True 이면 보이는 창에서 사용자가 직접 로그인(추가 인증 포함)할 때까지 기다린다.
+    반환: (token, diag, final_url)"""
+    token_holder, diag = {}, {}
+
+    def on_request(request):
+        auth = request.headers.get("authorization", "")
+        try:
+            host = request.url.split("/")[2]
+        except Exception:
+            host = "?"
+        if "imweb" in host and auth:
+            d = diag.setdefault(host, set())
+            d.add("/" + "/".join(request.url.split("?")[0].split("/")[3:5]))
+        if auth.startswith("Bearer ") and "oms.imweb.me" in request.url:
+            token_holder["token"] = auth.replace("Bearer ", "")
+
+    with sync_playwright() as p:
+        ctx = p.chromium.launch_persistent_context(str(OMS_PROFILE), headless=headless,
+                                                   viewport={"width": 1280, "height": 860})
+        page = ctx.pages[0] if ctx.pages else ctx.new_page()
+        page.on("request", on_request)
+
+        def open_admin():
+            page.goto(OMS_ORDER_URL, wait_until="domcontentloaded", timeout=60000)
+            for _ in range(20):                       # 최대 ~20초: 토큰 요청이 보일 때까지
+                if token_holder.get("token"):
+                    break
+                page.wait_for_timeout(1000)
+
+        open_admin()
+        if not token_holder.get("token") and manual_login:
+            print("   ▶ 열린 브라우저 창에서 아임웹 관리자에 직접 로그인하세요 (추가 인증이 뜨면 그것도 직접 진행).")
+            print("   ▶ 로그인이 끝나면 자동으로 이어집니다. 최대 5분 대기...")
+            page.goto("https://imweb.me/login", wait_until="domcontentloaded", timeout=60000)
+            for _ in range(150):                      # 2초 × 150 = 5분
+                page.wait_for_timeout(2000)
+                if "/mysite" in page.url or "/admin" in page.url:
+                    break
+            open_admin()
+        final_url = page.url
+        ctx.close()
+    return token_holder.get("token", ""), diag, final_url
+
+
 def get_oms_token() -> str:
-    """OMS Bearer 토큰 반환 (캐시 → Playwright 순)"""
+    """OMS Bearer 토큰 반환 (캐시 → 저장된 세션으로 자동 → 안 되면 직접 로그인 창)"""
     cached = _load_cached_token()
     if cached:
         print("   [토큰 캐시 사용]")
         return cached
 
-    print("[1] 아임웹 관리자 로그인 중...")
-    token_holder = {}
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context()
-        page    = context.new_page()
-
-        # 네트워크 요청 인터셉트
-        def on_request(request):
-            auth = request.headers.get("authorization", "")
-            if auth.startswith("Bearer ") and "oms.imweb.me" in request.url:
-                token_holder["token"] = auth.replace("Bearer ", "")
-
-        page.on("request", on_request)
-
-        # 로그인
-        page.goto("https://imweb.me/login", wait_until="domcontentloaded", timeout=60000)
-        page.wait_for_selector("input[type='email'], input[name='email']", timeout=15000)
-        page.fill("input[type='email'], input[name='email']", IMWEB_EMAIL)
-        page.fill("input[type='password']", IMWEB_PASSWORD)
-        page.click("button[type='submit']")
-        try:
-            page.wait_for_url("**/mysite**", timeout=20000)
-        except Exception:
-            page.wait_for_timeout(5000)
-        print("   로그인 완료")
-
-        # OMS 페이지 접속 (토큰 발급 트리거)
-        print("[2] OMS 페이지 접속 중...")
-        page.goto(OMS_ORDER_URL, wait_until="domcontentloaded", timeout=60000)
-        page.wait_for_timeout(5000)  # 토큰 발급 대기
-
-        browser.close()
-
-    token = token_holder.get("token", "")
+    OMS_PROFILE.mkdir(exist_ok=True)
+    print("[1] 저장된 로그인 세션으로 OMS 접속 중...")
+    token, diag, final_url = _capture_oms_token(headless=True, manual_login=False)
     if not token:
+        print("   저장된 로그인이 없거나 만료되었습니다. 로그인 창을 엽니다.")
+        token, diag, final_url = _capture_oms_token(headless=False, manual_login=True)
+    if not token:
+        print("   [진단] 최종 페이지:", final_url.split("?")[0])
+        for h, paths in sorted(diag.items()):
+            print(f"   [진단] 인증 요청 {h}: {sorted(paths)[:6]}")
         raise RuntimeError("OMS Bearer 토큰을 가져오지 못했습니다.")
-    print(f"   토큰 획득: {token[:30]}...")
+    print(f"   토큰 획득 (길이 {len(token)})")
     _save_token(token)
     return token
 

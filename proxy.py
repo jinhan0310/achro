@@ -404,28 +404,68 @@ GROUND_READONLY_PATHS = {'/orders'}
 GROUND_STANDBY = 'SHIPPING_READY'   # 배송대기 (OMS OSS02)
 _ENV_FILE = Path(__file__).parent / '.env'
 
-def _ground_refresh():
-    """access token 만료 시 refresh token 으로 갱신하고 .env 에 저장."""
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None   # 리다이렉트를 따라가지 않고 Location 만 읽는다
+
+def _ground_save(at, rt):
     from dotenv import set_key
-    cid = os.getenv('IMWEB_GROUND_CLIENT_ID', '')
-    sec = os.getenv('IMWEB_GROUND_CLIENT_SECRET', '')
-    rt  = os.getenv('IMWEB_GROUND_REFRESH_TOKEN', '')
-    if not (cid and sec and rt):
-        raise RuntimeError('Ground 토큰 없음 — 인증을 다시 진행해야 합니다.')
-    body = urlencode({'clientId': cid, 'clientSecret': sec,
-                      'refreshToken': rt, 'grantType': 'refresh_token'}).encode()
+    set_key(str(_ENV_FILE), 'IMWEB_GROUND_ACCESS_TOKEN', at)
+    set_key(str(_ENV_FILE), 'IMWEB_GROUND_REFRESH_TOKEN', rt or '')
+    os.environ['IMWEB_GROUND_ACCESS_TOKEN'] = at
+    os.environ['IMWEB_GROUND_REFRESH_TOKEN'] = rt or ''
+
+def _ground_token_request(data):
+    body = urlencode(data).encode()
     req = urllib.request.Request(GROUND_BASE + '/oauth2/token', data=body, method='POST',
                                  headers={'Content-Type': 'application/x-www-form-urlencoded'})
     with urllib.request.urlopen(req, timeout=15) as r:
         res = json.loads(r.read())
     d = res.get('data', res)
-    at, nrt = d.get('accessToken'), d.get('refreshToken') or rt
-    if not at:
-        raise RuntimeError('Ground 토큰 갱신 실패')
-    set_key(str(_ENV_FILE), 'IMWEB_GROUND_ACCESS_TOKEN', at)
-    set_key(str(_ENV_FILE), 'IMWEB_GROUND_REFRESH_TOKEN', nrt)
-    os.environ['IMWEB_GROUND_ACCESS_TOKEN'] = at
-    os.environ['IMWEB_GROUND_REFRESH_TOKEN'] = nrt
+    if not d.get('accessToken'):
+        raise RuntimeError('토큰 응답 이상')
+    return d['accessToken'], d.get('refreshToken')
+
+def _ground_issue():
+    """토큰을 새로 발급 (앱 소유자 계정에서는 승인 화면 없이 인가 코드가 바로 나온다).
+    아임웹은 앱당 유효 토큰을 하나만 허용하므로, 다른 컴퓨터가 발급하면 이 컴퓨터 토큰이 무효가 된다 →
+    무효가 될 때마다 이 함수로 스스로 복구한다."""
+    cid  = os.getenv('IMWEB_GROUND_CLIENT_ID', '')
+    sec  = os.getenv('IMWEB_GROUND_CLIENT_SECRET', '')
+    site = os.getenv('IMWEB_SITE_CODE', '')
+    if not (cid and sec and site):
+        raise RuntimeError('.env 에 IMWEB_GROUND_CLIENT_ID / IMWEB_GROUND_CLIENT_SECRET / IMWEB_SITE_CODE 가 필요합니다.')
+    redirect = 'http://127.0.0.1:9999/callback'
+    url = (GROUND_BASE + '/oauth2/authorize?' + urlencode({
+        'responseType': 'code', 'clientId': cid, 'redirectUri': redirect,
+        'scope': 'site-info:write order:read', 'state': 'achro', 'siteCode': site}))
+    opener = urllib.request.build_opener(_NoRedirect)
+    try:
+        opener.open(url, timeout=15)
+        raise RuntimeError('인가 응답 이상')
+    except urllib.error.HTTPError as e:
+        loc = e.headers.get('Location', '') if e.code in (301, 302, 303, 307) else ''
+    q = parse_qs(urlparse(loc).query)
+    if 'code' not in q:
+        raise RuntimeError('인가 코드 발급 실패: ' + (q.get('message', ['알 수 없음'])[0]))
+    at, rt = _ground_token_request({'clientId': cid, 'clientSecret': sec, 'code': q['code'][0],
+                                    'grantType': 'authorization_code', 'redirectUri': redirect})
+    _ground_save(at, rt)
+
+def _ground_refresh():
+    """access token 갱신: refresh token → 실패하면 새로 발급. 결과는 .env 에 저장."""
+    cid = os.getenv('IMWEB_GROUND_CLIENT_ID', '')
+    sec = os.getenv('IMWEB_GROUND_CLIENT_SECRET', '')
+    rt  = os.getenv('IMWEB_GROUND_REFRESH_TOKEN', '')
+    if cid and sec and rt:
+        try:
+            at, nrt = _ground_token_request({'clientId': cid, 'clientSecret': sec,
+                                             'refreshToken': rt, 'grantType': 'refresh_token'})
+            _ground_save(at, nrt or rt)
+            return
+        except Exception:
+            pass   # 다른 컴퓨터가 토큰을 새로 발급해 무효가 된 경우 등 → 아래에서 재발급
+    _ground_issue()
 
 def _ground_get(path, params, _retry=True):
     """Ground API GET 전용 호출 — 허용된 경로만, 401 이면 토큰 갱신 후 1회 재시도."""
