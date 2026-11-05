@@ -4545,6 +4545,7 @@ function renderVendorHistTable() {
         <div style="font-size:15px;font-weight:700;margin-bottom:6px">주문 내역</div>
         <div style="font-size:12px;color:var(--text2);margin-bottom:12px">imweb 주문 엑셀 파일<br>(.xlsx / .xls)</div>
         <button class="btn btn-outline" style="font-size:12px" onclick="event.stopPropagation();document.getElementById('oc-fileA').click()">파일 선택</button>
+        <button class="btn btn-dark" id="oc-imwebBtn" style="font-size:12px;margin-left:6px" onclick="event.stopPropagation();ocFetchImwebStandby()">아임웹 배송대기 불러오기</button>
         <div style="margin-top:10px;font-size:12px;color:var(--text2);min-height:18px" id="oc-stA">파일을 드래그하거나 버튼을 눌러주세요</div>
       </div>
       <div style="border:2px dashed var(--border);border-radius:12px;padding:24px 16px;text-align:center;cursor:pointer;background:var(--surface);transition:border-color .2s" id="oc-dropB"
@@ -5665,7 +5666,10 @@ function ocColVal(r, keys) {
 }
 function ocParseOrder(wb, fname) {
   var ws = wb.Sheets[wb.SheetNames[0]];
-  var rows = XLSX.utils.sheet_to_json(ws, {defval:''});
+  ocParseRows(XLSX.utils.sheet_to_json(ws, {defval:''}), fname);
+}
+// 엑셀/아임웹 API 공통: 행(상품명·옵션명·구매수량·주문번호·수령자명·주문일·관리자 메모) → 주문 목록
+function ocParseRows(rows, fname) {
   ocOrders = [];
   rows.forEach(function(r) {
     var raw = String(ocColVal(r, ['상품명','상품명(옵션)']) || '');
@@ -5726,6 +5730,39 @@ function ocParseOrder(wb, fname) {
   document.getElementById('oc-dropA').style.borderColor = 'var(--green)';
   ocSetChip('oc-chipO', '주문 ' + ocOrders.length + '건', '#052e16', 'var(--green)');
   ocCheckReady();
+}
+// ── 아임웹 Open API 배송대기 불러오기 (로컬 proxy.py 경유, 조회 전용) ──
+async function ocFetchImwebStandby() {
+  var btn = document.getElementById('oc-imwebBtn');
+  var restore = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '불러오는 중...'; }
+  try {
+    ocSetStA('프록시 확인 중...');
+    try {
+      var c1 = new AbortController(); var t1 = setTimeout(function(){ c1.abort(); }, 1500);
+      await fetch('http://localhost:7777/ping', {signal: c1.signal}); clearTimeout(t1);
+    } catch(e) { throw new Error('프록시(proxy.py)가 실행 중이 아닙니다. ACHRO실행.bat 으로 실행한 뒤 다시 시도하세요.'); }
+    ocSetStA('아임웹 배송대기 주문 조회 중...');
+    var res = await (await fetch('http://localhost:7777/api/imweb/standby')).json();
+    if (!res.ok) throw new Error(res.msg || '조회 실패');
+    if (!res.rows.length) { ocSetStA('배송대기 주문이 없습니다.'); return; }
+    // 관리자 메모('챙겨놈')는 OMS 경유라 실패해도 주문 불러오기는 계속 진행
+    var memoNote = '';
+    try {
+      var c2 = new AbortController(); var t2 = setTimeout(function(){ c2.abort(); }, 20000);
+      var mr = await (await fetch('http://localhost:7777/api/order-memos', {signal: c2.signal})).json(); clearTimeout(t2);
+      if (mr.ok) {
+        var mm = {};
+        (mr.orders || []).forEach(function(o) { mm[String(o.orderNo)] = (o.memos || []).map(function(m){ return m.memo; }).join(' | '); });
+        res.rows.forEach(function(r) { if (mm[r['주문번호']]) r['관리자 메모'] = mm[r['주문번호']]; });
+      } else { memoNote = ' (관리자 메모 못 가져옴)'; }
+    } catch(e) { memoNote = ' (관리자 메모 못 가져옴)'; }
+    ocParseRows(res.rows, '아임웹 배송대기 ' + res.orders + '건 / ' + res.rows.length + '줄' + memoNote);
+  } catch(e) {
+    ocSetStA('⚠ ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = restore; }
+  }
 }
 function ocParseSupplier(wb, fname) {
   ocSupMap = {};

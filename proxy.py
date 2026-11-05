@@ -405,6 +405,94 @@ def _load_customers():
     conn.close()
     return [dict(r) for r in rows]
 
+# ── 아임웹 Open API(OAuth2, "Ground") 배송대기 조회 ───────────────────────
+# 토큰(IMWEB_GROUND_*)은 .env 에만 저장. 조회(GET /orders) 외 호출은 코드 레벨에서 불가.
+GROUND_BASE = 'https://openapi.imweb.me'
+GROUND_READONLY_PATHS = {'/orders'}
+GROUND_STANDBY = 'SHIPPING_READY'   # 배송대기 (OMS OSS02)
+_ENV_FILE = Path(__file__).parent / '.env'
+
+def _ground_refresh():
+    """access token 만료 시 refresh token 으로 갱신하고 .env 에 저장."""
+    from dotenv import set_key
+    cid = os.getenv('IMWEB_GROUND_CLIENT_ID', '')
+    sec = os.getenv('IMWEB_GROUND_CLIENT_SECRET', '')
+    rt  = os.getenv('IMWEB_GROUND_REFRESH_TOKEN', '')
+    if not (cid and sec and rt):
+        raise RuntimeError('Ground 토큰 없음 — 인증을 다시 진행해야 합니다.')
+    body = urlencode({'clientId': cid, 'clientSecret': sec,
+                      'refreshToken': rt, 'grantType': 'refresh_token'}).encode()
+    req = urllib.request.Request(GROUND_BASE + '/oauth2/token', data=body, method='POST',
+                                 headers={'Content-Type': 'application/x-www-form-urlencoded'})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        res = json.loads(r.read())
+    d = res.get('data', res)
+    at, nrt = d.get('accessToken'), d.get('refreshToken') or rt
+    if not at:
+        raise RuntimeError('Ground 토큰 갱신 실패')
+    set_key(str(_ENV_FILE), 'IMWEB_GROUND_ACCESS_TOKEN', at)
+    set_key(str(_ENV_FILE), 'IMWEB_GROUND_REFRESH_TOKEN', nrt)
+    os.environ['IMWEB_GROUND_ACCESS_TOKEN'] = at
+    os.environ['IMWEB_GROUND_REFRESH_TOKEN'] = nrt
+
+def _ground_get(path, params, _retry=True):
+    """Ground API GET 전용 호출 — 허용된 경로만, 401 이면 토큰 갱신 후 1회 재시도."""
+    if path not in GROUND_READONLY_PATHS:
+        raise RuntimeError('허용되지 않은 Ground 경로: ' + path)
+    url = GROUND_BASE + path + '?' + urlencode(params)
+    req = urllib.request.Request(url, method='GET', headers={
+        'Authorization': 'Bearer ' + os.getenv('IMWEB_GROUND_ACCESS_TOKEN', ''),
+        'Accept': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=25) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 401 and _retry:
+            _ground_refresh()
+            return _ground_get(path, params, _retry=False)
+        raise
+
+def _ground_option_str(p):
+    """옵션을 주문 엑셀과 같은 형식('color : khaki / size : XL')으로 조립."""
+    pairs = []
+    for ol in (p.get('optionInfoList') or []):
+        for k, v in ol.items():
+            pairs.append(f'{k} : {v}')
+    if not pairs:
+        for k, v in (p.get('optionInfo') or {}).items():
+            pairs.append(f'{k} : {v}')
+    return ' / '.join(pairs)
+
+def _ground_fetch_standby():
+    """배송대기 섹션의 상품행만 수집. 반환: (rows, order_count)."""
+    site = os.getenv('IMWEB_SITE_CODE', '')
+    rows, orders, page = [], set(), 1
+    while True:
+        res = _ground_get('/orders', {'siteCode': site, 'page': page, 'limit': 100,
+                                      'orderSectionStatus': GROUND_STANDBY})
+        d = res.get('data', {})
+        for o in d.get('list', []):
+            for sec in (o.get('sections') or []):
+                if sec.get('orderSectionStatus') != GROUND_STANDBY:
+                    continue   # 같은 주문의 다른 상태(배송중 등) 섹션은 제외
+                dv = sec.get('delivery') or {}
+                for it in (sec.get('sectionItems') or []):
+                    p = it.get('productInfo') or {}
+                    rows.append({
+                        '주문번호': str(o.get('orderNo', '')),
+                        '상품명': p.get('prodName', ''),
+                        '옵션명': _ground_option_str(p),
+                        '구매수량': it.get('qty', 1),
+                        '수령자명': dv.get('receiverName', ''),
+                        '주문일': o.get('wtime', ''),
+                    })
+                    orders.add(str(o.get('orderNo', '')))
+        if page >= (d.get('totalPage') or 1):
+            break
+        page += 1
+        time.sleep(0.3)
+    return rows, len(orders)
+
 # ── HTTP 핸들러 ────────────────────────────────────────────────────
 class ProxyHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
@@ -441,6 +529,13 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
         if self.path == '/api/customers/status':
             return self._json(200, _update_status)
+
+        if self.path.startswith('/api/imweb/standby'):
+            try:
+                rows, order_cnt = _ground_fetch_standby()
+                return self._json(200, {'ok': True, 'rows': rows, 'count': len(rows), 'orders': order_cnt})
+            except Exception as e:
+                return self._json(200, {'ok': False, 'msg': f'아임웹 배송대기 조회 실패: {e}'})
 
         if self.path == '/api/delivery-waiting/save-excel':
             items, err = _oms_fetch_delivery_waiting()
